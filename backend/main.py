@@ -1,20 +1,36 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
+from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
 import pickle
-import os
-from datetime import datetime
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import RobustScaler, LabelEncoder
+from contextlib import asynccontextmanager
 
+from database import get_db, User, Transaction, Category, UserModel, init_db
+from auth import hash_password, verify_password, create_access_token, get_current_user
+# ============================================================
+# STARTUP
+# ============================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()  # startup
+    yield
+    # (opsional) shutdown logic di sini
+    
 # ============================================================
 # INISIALISASI APP
 # ============================================================
 app = FastAPI(
     title="Personal Finance Anomaly Detection API",
     description="Backend API untuk deteksi anomali pengeluaran pribadi menggunakan Isolation Forest",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS — izinkan Next.js frontend mengakses API ini
@@ -39,6 +55,10 @@ THRESHOLD_WARNING = 0.50
 MIN_CATEGORY = 20
 MIN_GLOBAL   = 50
 
+N_ESTIMATORS      = 100
+MAX_SAMPLES       = 256
+RANDOM_SEED       = 42
+
 # Kategori yang masuk anomaly detection
 ANOMALY_CATEGORIES = [
     "Food", "Transport", "Lifestyle",
@@ -49,9 +69,9 @@ ANOMALY_CATEGORIES = [
 EXCLUDED_CATEGORIES = ["Health", "Education", "Big Expense"]
 
 # ============================================================
-# LOAD MODEL
+# LOAD GLOBAL MODEL (fallback cold start)
 # ============================================================
-def load_model():
+def load_global_model():
     try:
         with open(f"{MODEL_DIR}/isolation_forest.pkl", "rb") as f:
             model = pickle.load(f)
@@ -61,178 +81,376 @@ def load_model():
             encoder = pickle.load(f)
         with open(f"{MODEL_DIR}/norm_params.pkl", "rb") as f:
             norm_params = pickle.load(f)
-        print("✅ Model loaded successfully")
+        print("✅ Global model loaded")
         return model, scaler, encoder, norm_params
     except FileNotFoundError:
-        print("⚠️  Model files not found. Run train.py first.")
+        print("⚠️  Global model not found. Run train.py first.")
         return None, None, None, None
 
-model, scaler, encoder, norm_params = load_model()
+global_model, global_scaler, global_encoder, global_norm_params = load_global_model()
 
 # ============================================================
 # SCHEMAS (struktur request & response)
 # ============================================================
-class TransactionRequest(BaseModel):
-    amount: float = Field(..., gt=0, description="Jumlah transaksi dalam Rupiah")
-    category: str = Field(..., description="Kategori transaksi")
-    timestamp: Optional[str] = Field(None, description="Timestamp transaksi (ISO format). Default: sekarang")
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    name: str
+    password: str = Field(..., min_length=6)
 
-class AnomalyResponse(BaseModel):
-    anomaly_score: float
-    status: str          # "normal", "warning", "anomaly"
-    is_excluded: bool    # True jika kategori tidak di-detect
-    message: str
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int
+    name: str
 
-class ColdStartResponse(BaseModel):
+class TransactionCreate(BaseModel):
+    amount: float = Field(..., gt=0)
+    category_id: int
+    note: Optional[str] = None
+    timestamp: Optional[str] = None
+
+class ColdStartStatus(BaseModel):
     is_ready: bool
     total_transactions: int
     min_global: int
+    progress_global: float
     category_status: dict
 
-class StatsResponse(BaseModel):
-    total_transactions: int
-    total_amount: float
-    average_amount: float
-    by_category: dict
-    anomaly_count: int
+# ============================================================
+# HELPER: Load model user dari DB
+# ============================================================
+def load_user_model(user_model: UserModel):
+    model       = pickle.loads(user_model.model_blob)
+    scaler      = pickle.loads(user_model.scaler_blob)
+    encoder     = pickle.loads(user_model.encoder_blob)
+    norm_params = pickle.loads(user_model.norm_params_blob)
+    return model, scaler, encoder, norm_params
 
 # ============================================================
 # HELPER: Hitung anomaly score
 # ============================================================
-def calculate_anomaly_score(amount: float, category: str, timestamp: datetime) -> dict:
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model belum dimuat. Jalankan train.py terlebih dahulu.")
+def calculate_score(amount, category_name, timestamp, model, scaler, encoder, norm_params):
+    hour             = timestamp.hour
+    day_of_week      = timestamp.weekday()
+    amount_scaled    = scaler.transform([[amount]])[0][0]
+    category_encoded = encoder.transform([category_name])[0]
+    X                = np.array([[amount_scaled, category_encoded, hour, day_of_week]])
+    raw_score        = -model.score_samples(X)[0]
+    min_s            = norm_params["min_score"]
+    max_s            = norm_params["max_score"]
+    score            = float(np.clip((raw_score - min_s) / (max_s - min_s), 0, 1))
 
-    hour        = timestamp.hour
-    day_of_week = timestamp.weekday()  # 0=Senin, 6=Minggu
-
-    # Preprocessing — sama persis dengan train.py
-    amount_scaled     = scaler.transform([[amount]])[0][0]
-    category_encoded  = encoder.transform([category])[0]
-
-    # Feature vector {x1, x2, x3, x4}
-    X = np.array([[amount_scaled, category_encoded, hour, day_of_week]])
-
-    # Hitung score
-    raw_score     = -model.score_samples(X)[0]
-    min_s         = norm_params["min_score"]
-    max_s         = norm_params["max_score"]
-    anomaly_score = float(np.clip((raw_score - min_s) / (max_s - min_s), 0, 1))
-
-    # Klasifikasi sesuai threshold paper
-    if anomaly_score > THRESHOLD_ANOMALY:
-        status = "anomaly"
-    elif anomaly_score >= THRESHOLD_WARNING:
-        status = "warning"
+    if score > THRESHOLD_ANOMALY:
+        anomaly_status = "anomaly"
+    elif score >= THRESHOLD_WARNING:
+        anomaly_status = "warning"
     else:
-        status = "normal"
+        anomaly_status = "normal"
 
-    return {"anomaly_score": round(anomaly_score, 4), "status": status}
+    return score, anomaly_status
 
 # ============================================================
-# ENDPOINTS
+# HELPER: Retrain model user
 # ============================================================
+def retrain_user_model(user_id: int, db: Session):
+    transactions = db.query(Transaction).filter(
+        Transaction.user_id == user_id,
+        Transaction.is_excluded == False
+    ).all()
 
+    if len(transactions) < MIN_GLOBAL:
+        return False
+
+    categories = {cat.id: cat.name for cat in db.query(Category).all()}
+    data = [{
+        "amount"     : t.amount,
+        "category"   : categories[t.category_id],
+        "hour"       : t.timestamp.hour,
+        "day_of_week": t.timestamp.weekday()
+    } for t in transactions]
+
+    df                     = pd.DataFrame(data)
+    scaler                 = RobustScaler()
+    encoder                = LabelEncoder()
+    df["amount_scaled"]    = scaler.fit_transform(df[["amount"]])
+    df["category_encoded"] = encoder.fit_transform(df["category"])
+    X                      = df[["amount_scaled", "category_encoded", "hour", "day_of_week"]].values
+
+    model = IsolationForest(
+        n_estimators=N_ESTIMATORS,
+        max_samples=min(MAX_SAMPLES, len(X)),
+        contamination=0.1,
+        random_state=RANDOM_SEED
+    )
+    model.fit(X)
+
+    raw_scores  = -model.score_samples(X)
+    norm_params = {"min_score": float(raw_scores.min()), "max_score": float(raw_scores.max())}
+
+    user_model = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+    if not user_model:
+        user_model = UserModel(user_id=user_id)
+        db.add(user_model)
+
+    user_model.model_blob        = pickle.dumps(model)
+    user_model.scaler_blob       = pickle.dumps(scaler)
+    user_model.encoder_blob      = pickle.dumps(encoder)
+    user_model.norm_params_blob  = pickle.dumps(norm_params)
+    user_model.transaction_count = len(transactions)
+    user_model.is_trained        = True
+    user_model.last_trained      = datetime.now(timezone.utc)
+    db.commit()
+    print(f"✅ Model retrained for user {user_id} ({len(transactions)} transactions)")
+    return True
+
+# ============================================================
+# HELPER: Cek apakah perlu retrain
+# ============================================================
+def should_retrain(user_id: int, db: Session) -> bool:
+    user_model   = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+    transactions = db.query(Transaction).filter(
+        Transaction.user_id == user_id,
+        Transaction.is_excluded == False
+    ).all()
+    total = len(transactions)
+
+    if not user_model or not user_model.is_trained:
+        return total >= MIN_GLOBAL
+
+    return (total - user_model.transaction_count) >= MIN_GLOBAL
+
+
+
+# ============================================================
+# ENDPOINTS — AUTH
+# ============================================================
 @app.get("/")
 def root():
-    return {"message": "Personal Finance Anomaly Detection API", "status": "running"}
+    return {"message": "Personal Finance API", "status": "running"}
 
-# ── 1. Predict anomaly score transaksi baru ──────────────────
-@app.post("/predict", response_model=AnomalyResponse)
-def predict(transaction: TransactionRequest):
-    # Parse timestamp
-    if transaction.timestamp:
-        try:
-            ts = datetime.fromisoformat(transaction.timestamp)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Format timestamp tidak valid. Gunakan ISO format: 2024-01-15T14:30:00")
-    else:
-        ts = datetime.now()
+@app.post("/auth/register", status_code=201)
+def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.email == req.email).first():
+        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+    user = User(email=req.email, name=req.name, hashed_password=hash_password(req.password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"message": "Registrasi berhasil!", "user_id": user.id}
 
-    # Cek apakah kategori valid
-    all_categories = ANOMALY_CATEGORIES + EXCLUDED_CATEGORIES
-    if transaction.category not in all_categories:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Kategori tidak valid. Pilihan: {all_categories}"
-        )
+@app.post("/auth/login", response_model=LoginResponse)
+def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == form.username).first()
+    if not user or not verify_password(form.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Email atau password salah.")
+    token = create_access_token({"sub": str(user.id)})
+    return LoginResponse(access_token=token, user_id=user.id, name=user.name)
 
-    # Jika kategori excluded, skip model
-    if transaction.category in EXCLUDED_CATEGORIES:
-        return AnomalyResponse(
-            anomaly_score=0.0,
-            status="normal",
-            is_excluded=True,
-            message=f"Kategori '{transaction.category}' tidak dianalisis (occasional expense)."
-        )
+# ============================================================
+# ENDPOINTS — CATEGORIES
+# ============================================================
+@app.get("/categories")
+def get_categories(db: Session = Depends(get_db)):
+    return [{"id": c.id, "name": c.name, "is_excluded": c.is_excluded}
+            for c in db.query(Category).all()]
 
-    # Cek kategori dikenali oleh encoder
-    if transaction.category not in encoder.classes_:
-        raise HTTPException(status_code=400, detail=f"Kategori '{transaction.category}' tidak dikenali model.")
+# ============================================================
+# ENDPOINTS — TRANSACTIONS
+# ============================================================
+@app.post("/transactions", status_code=201)
+def create_transaction(
+    req: TransactionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    category = db.query(Category).filter(Category.id == req.category_id).first()
+    if not category:
+        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
 
-    # Hitung anomaly score
-    result = calculate_anomaly_score(transaction.amount, transaction.category, ts)
+    ts             = datetime.fromisoformat(req.timestamp) if req.timestamp else datetime.now(timezone.utc)
+    anomaly_score  = None
+    anomaly_status = None
+    is_excluded    = category.is_excluded
 
-    # Buat pesan yang user-friendly
-    if result["status"] == "anomaly":
-        message = f"⚠️ Transaksi ini terdeteksi anomali! Pengeluaran {transaction.category} sebesar Rp {transaction.amount:,.0f} tidak wajar."
-    elif result["status"] == "warning":
-        message = f"🔔 Perhatian! Pengeluaran {transaction.category} sebesar Rp {transaction.amount:,.0f} agak tidak biasa."
-    else:
-        message = f"✅ Pengeluaran normal."
+    if not is_excluded:
+        user_model = db.query(UserModel).filter(
+            UserModel.user_id == current_user.id,
+            UserModel.is_trained == True
+        ).first()
 
-    return AnomalyResponse(
-        anomaly_score=result["anomaly_score"],
-        status=result["status"],
-        is_excluded=False,
-        message=message
+        if user_model:
+            model, scaler, encoder, norm_params = load_user_model(user_model)
+        elif global_model:
+            model, scaler, encoder, norm_params = global_model, global_scaler, global_encoder, global_norm_params
+        else:
+            model = None
+
+        if model and category.name in encoder.classes_:
+            anomaly_score, anomaly_status = calculate_score(
+                req.amount, category.name, ts, model, scaler, encoder, norm_params
+            )
+
+    transaction = Transaction(
+        user_id        = current_user.id,
+        category_id    = req.category_id,
+        amount         = req.amount,
+        note           = req.note,
+        timestamp      = ts,
+        anomaly_score  = anomaly_score,
+        anomaly_status = anomaly_status,
+        is_excluded    = is_excluded
     )
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
 
-# ── 2. Cek status cold start ─────────────────────────────────
-@app.get("/cold-start-status", response_model=ColdStartResponse)
-def cold_start_status(user_id: str = "default"):
-    """
-    Cek apakah user sudah punya cukup data untuk anomaly detection.
-    Nanti user_id akan dipakai untuk query database per user.
-    """
-    # TODO: Nanti diganti dengan query ke database berdasarkan user_id
-    # Untuk sekarang return mock data
-    return ColdStartResponse(
-        is_ready=False,
-        total_transactions=0,
-        min_global=MIN_GLOBAL,
-        category_status={cat: {"count": 0, "min_required": MIN_CATEGORY, "is_ready": False}
-                        for cat in ANOMALY_CATEGORIES}
-    )
+    if should_retrain(current_user.id, db):
+        retrain_user_model(current_user.id, db)
 
-# ── 3. Statistik transaksi ───────────────────────────────────
-@app.get("/stats", response_model=StatsResponse)
-def get_stats(user_id: str = "default", month: Optional[int] = None, year: Optional[int] = None):
-    """
-    Statistik pengeluaran user.
-    Nanti diganti dengan query ke database berdasarkan user_id, month, year.
-    """
-    # TODO: Nanti diganti dengan query ke database
-    return StatsResponse(
-        total_transactions=0,
-        total_amount=0.0,
-        average_amount=0.0,
-        by_category={},
-        anomaly_count=0
-    )
-
-# ── 4. Health check model ────────────────────────────────────
-@app.get("/model-status")
-def model_status():
-    if model is None:
-        return {"status": "not_loaded", "message": "Model belum dimuat. Jalankan train.py."}
     return {
-        "status"       : "loaded",
-        "categories"   : list(encoder.classes_),
-        "norm_params"  : norm_params,
-        "threshold"    : {"anomaly": THRESHOLD_ANOMALY, "warning": THRESHOLD_WARNING}
+        "id"            : transaction.id,
+        "amount"        : transaction.amount,
+        "category"      : category.name,
+        "note"          : transaction.note,
+        "timestamp"     : transaction.timestamp,
+        "anomaly_score" : transaction.anomaly_score,
+        "anomaly_status": transaction.anomaly_status,
+        "is_excluded"   : transaction.is_excluded,
+        "message"       : "⚠️ Anomali terdeteksi!" if anomaly_status == "anomaly"
+                          else "🔔 Pengeluaran tidak biasa." if anomaly_status == "warning"
+                          else "✅ Transaksi normal."
     }
 
+@app.get("/transactions")
+def get_transactions(
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
+    if month and year:
+        query = query.filter(
+            Transaction.timestamp >= datetime(year, month, 1),
+            Transaction.timestamp < datetime(year, month + 1, 1) if month < 12
+            else datetime(year + 1, 1, 1)
+        )
+    transactions = query.order_by(Transaction.timestamp.desc()).all()
+    categories   = {cat.id: cat.name for cat in db.query(Category).all()}
+    return [{
+        "id"            : t.id,
+        "amount"        : t.amount,
+        "category_id"   : t.category_id,
+        "category_name" : categories.get(t.category_id, "Unknown"),
+        "note"          : t.note,
+        "timestamp"     : t.timestamp,
+        "anomaly_score" : t.anomaly_score,
+        "anomaly_status": t.anomaly_status,
+        "is_excluded"   : t.is_excluded
+    } for t in transactions]
+
+@app.delete("/transactions/{transaction_id}")
+def delete_transaction(
+    transaction_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    transaction = db.query(Transaction).filter(
+        Transaction.id == transaction_id,
+        Transaction.user_id == current_user.id
+    ).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+    db.delete(transaction)
+    db.commit()
+    return {"message": "Transaksi berhasil dihapus."}
+
+# ============================================================
+# ENDPOINTS — STATS
+# ============================================================
+@app.get("/stats")
+def get_stats(
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
+    if month and year:
+        query = query.filter(
+            Transaction.timestamp >= datetime(year, month, 1),
+            Transaction.timestamp < datetime(year, month + 1, 1) if month < 12
+            else datetime(year + 1, 1, 1)
+        )
+    transactions  = query.all()
+    categories    = {cat.id: cat.name for cat in db.query(Category).all()}
+    if not transactions:
+        return {"total_transactions": 0, "total_amount": 0, "average_amount": 0,
+                "by_category": {}, "anomaly_count": 0}
+
+    total_amount  = sum(t.amount for t in transactions)
+    anomaly_count = sum(1 for t in transactions if t.anomaly_status == "anomaly")
+    by_category   = {}
+    for t in transactions:
+        cat_name = categories.get(t.category_id, "Unknown")
+        if cat_name not in by_category:
+            by_category[cat_name] = {"total": 0, "count": 0, "anomaly_count": 0}
+        by_category[cat_name]["total"] += t.amount
+        by_category[cat_name]["count"] += 1
+        if t.anomaly_status == "anomaly":
+            by_category[cat_name]["anomaly_count"] += 1
+
+    return {
+        "total_transactions": len(transactions),
+        "total_amount"      : total_amount,
+        "average_amount"    : total_amount / len(transactions),
+        "by_category"       : by_category,
+        "anomaly_count"     : anomaly_count
+    }
+
+# ============================================================
+# ENDPOINTS — COLD START & MODEL STATUS
+# ============================================================
+@app.get("/cold-start-status", response_model=ColdStartStatus)
+def cold_start_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    transactions = db.query(Transaction).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.is_excluded == False
+    ).all()
+    total      = len(transactions)
+    categories = {cat.id: cat.name for cat in db.query(Category).filter(Category.is_excluded == False).all()}
+    cat_counts = {}
+    for t in transactions:
+        cat_name = categories.get(t.category_id, "Unknown")
+        cat_counts[cat_name] = cat_counts.get(cat_name, 0) + 1
+
+    return ColdStartStatus(
+        is_ready           = total >= MIN_GLOBAL,
+        total_transactions = total,
+        min_global         = MIN_GLOBAL,
+        progress_global    = min(total / MIN_GLOBAL * 100, 100),
+        category_status    = {
+            cat: {"count": cat_counts.get(cat, 0), "min_required": MIN_CATEGORY,
+                  "is_ready": cat_counts.get(cat, 0) >= MIN_CATEGORY}
+            for cat in categories.values()
+        }
+    )
+
+@app.get("/model-status")
+def model_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user_model = db.query(UserModel).filter(UserModel.user_id == current_user.id).first()
+    if user_model and user_model.is_trained:
+        return {"status": "personal", "message": "Menggunakan model personal kamu",
+                "transaction_count": user_model.transaction_count, "last_trained": user_model.last_trained}
+    elif global_model:
+        return {"status": "global", "message": "Menggunakan global model (cold start)"}
+    return {"status": "not_loaded", "message": "Model belum tersedia."}
 # ============================================================
 # RUN SERVER
 # ============================================================
