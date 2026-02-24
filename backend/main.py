@@ -1,3 +1,5 @@
+import calendar
+
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
@@ -132,7 +134,7 @@ def load_user_model(user_model: UserModel):
 def calculate_score(amount, category_name, timestamp, model, scaler, encoder, norm_params):
     hour             = timestamp.hour
     day_of_week      = timestamp.weekday()
-    amount_scaled    = scaler.transform([[amount]])[0][0]
+    amount_scaled    = scaler.transform(pd.DataFrame([[amount]], columns=["amount"]))[0][0]
     category_encoded = encoder.transform([category_name])[0]
     X                = np.array([[amount_scaled, category_encoded, hour, day_of_week]])
     raw_score        = -model.score_samples(X)[0]
@@ -316,9 +318,9 @@ def create_transaction(
         "anomaly_score" : transaction.anomaly_score,
         "anomaly_status": transaction.anomaly_status,
         "is_excluded"   : transaction.is_excluded,
-        "message"       : "⚠️ Anomali terdeteksi!" if anomaly_status == "anomaly"
-                          else "🔔 Pengeluaran tidak biasa." if anomaly_status == "warning"
-                          else "✅ Transaksi normal."
+        "message"       : "⚠️ Anomaly Detected!" if anomaly_status == "anomaly"
+                          else "🔔 Unusual Transaction" if anomaly_status == "warning"
+                          else "✅ Normal Transaction."
     }
 
 @app.get("/transactions")
@@ -330,10 +332,10 @@ def get_transactions(
 ):
     query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
     if month and year:
+        last_day = calendar.monthrange(year, month)[1]
         query = query.filter(
             Transaction.timestamp >= datetime(year, month, 1),
-            Transaction.timestamp < datetime(year, month + 1, 1) if month < 12
-            else datetime(year + 1, 1, 1)
+            Transaction.timestamp <= datetime(year, month, last_day, 23, 59, 59)
         )
     transactions = query.order_by(Transaction.timestamp.desc()).all()
     categories   = {cat.id: cat.name for cat in db.query(Category).all()}
@@ -360,10 +362,10 @@ def delete_transaction(
         Transaction.user_id == current_user.id
     ).first()
     if not transaction:
-        raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan.")
+        raise HTTPException(status_code=404, detail="Transaction not found.")
     db.delete(transaction)
     db.commit()
-    return {"message": "Transaksi berhasil dihapus."}
+    return {"message": "Transaction Successfully Deleted."}
 
 # ============================================================
 # ENDPOINTS — STATS
@@ -377,10 +379,10 @@ def get_stats(
 ):
     query = db.query(Transaction).filter(Transaction.user_id == current_user.id)
     if month and year:
+        last_day = calendar.monthrange(year, month)[1]
         query = query.filter(
             Transaction.timestamp >= datetime(year, month, 1),
-            Transaction.timestamp < datetime(year, month + 1, 1) if month < 12
-            else datetime(year + 1, 1, 1)
+            Transaction.timestamp < datetime(year, month, last_day, 23, 59, 59)
         )
     transactions  = query.all()
     categories    = {cat.id: cat.name for cat in db.query(Category).all()}
@@ -449,8 +451,8 @@ def model_status(
         return {"status": "personal", "message": "Menggunakan model personal kamu",
                 "transaction_count": user_model.transaction_count, "last_trained": user_model.last_trained}
     elif global_model:
-        return {"status": "global", "message": "Menggunakan global model (cold start)"}
-    return {"status": "not_loaded", "message": "Model belum tersedia."}
+        return {"status": "global", "message": "Using global model (cold start)"}
+    return {"status": "not_loaded", "message": "Model not yet available."}
 # ============================================================
 # RUN SERVER
 # ============================================================
