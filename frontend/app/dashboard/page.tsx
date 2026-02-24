@@ -3,21 +3,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid
+} from "recharts";
 import { statsApi, transactionApi, modelApi, type Stats, type Transaction, type ColdStartStatus } from "@/lib/api";
 import { AlertTriangle, TrendingUp, Wallet, Plus, LogOut, List, Settings, Bell } from "lucide-react";
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Food: "#FF6B6B",
-  Transport: "#4ECDC4",
-  Lifestyle: "#45B7D1",
-  Entertainment: "#96CEB4",
-  Utilities: "#FFEAA7",
-  Telecommunication: "#DDA0DD",
-  Subscription: "#98D8C8",
-  Health: "#FF8C94",
-  Education: "#A8E6CF",
-  "Big Expense": "#FFD3A5",
+  Food: "#FF6B6B", Transport: "#4ECDC4", Lifestyle: "#45B7D1",
+  Entertainment: "#96CEB4", Utilities: "#FFEAA7", Telecommunication: "#DDA0DD",
+  Subscription: "#98D8C8", Health: "#FF8C94", Education: "#A8E6CF", "Big Expense": "#FFD3A5",
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -30,6 +26,21 @@ function formatRupiah(amount: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
 }
 
+function formatRupiahShort(amount: number) {
+  if (amount >= 1_000_000) return `Rp ${(amount / 1_000_000).toFixed(1)}jt`;
+  if (amount >= 1_000) return `Rp ${(amount / 1_000).toFixed(0)}rb`;
+  return `Rp ${amount}`;
+}
+
+interface MonthlyStats {
+  month: number;
+  year: number;
+  label: string;
+  total_amount: number;
+  transaction_count: number;
+  anomaly_count: number;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ name: string } | null>(null);
@@ -37,6 +48,7 @@ export default function DashboardPage() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [coldStart, setColdStart] = useState<ColdStartStatus | null>(null);
   const [modelStatus, setModelStatus] = useState<{ status: string; message: string } | null>(null);
+  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
   const [loading, setLoading] = useState(true);
 
   const now = new Date();
@@ -50,16 +62,18 @@ export default function DashboardPage() {
 
     const fetchAll = async () => {
       try {
-        const [statsData, txData, coldData, modelData] = await Promise.all([
+        const [statsData, txData, coldData, modelData, monthlyData] = await Promise.all([
           statsApi.get(month, year),
           transactionApi.getAll(month, year),
           modelApi.coldStartStatus(),
           modelApi.modelStatus(),
+          statsApi.getMonthly(6),
         ]);
         setStats(statsData);
         setRecentTransactions(txData.slice(0, 5));
         setColdStart(coldData);
         setModelStatus(modelData);
+        setMonthlyStats(monthlyData);
       } catch (e) {
         console.error(e);
       } finally {
@@ -76,12 +90,12 @@ export default function DashboardPage() {
   };
 
   const pieData = stats
-    ? Object.entries(stats.by_category).map(([name, data]) => ({
-        name, value: data.total, count: data.count,
-      }))
+    ? Object.entries(stats.by_category).map(([name, data]) => ({ name, value: data.total }))
     : [];
 
-  const anomalyTransactions = recentTransactions.filter(t => t.anomaly_status === "anomaly" || t.anomaly_status === "warning");
+  const anomalyTransactions = recentTransactions.filter(
+    t => t.anomaly_status === "anomaly" || t.anomaly_status === "warning"
+  );
 
   if (loading) {
     return (
@@ -101,7 +115,7 @@ export default function DashboardPage() {
               <Wallet size={14} color="white" />
             </div>
             <span className="font-bold text-[#1A1A1A] text-lg" style={{ fontFamily: "Georgia, serif" }}>
-              SpendIt
+              FinanceGuard
             </span>
           </div>
         </div>
@@ -141,7 +155,9 @@ export default function DashboardPage() {
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-[#1A1A1A]">Good {now.getHours() < 12 ? "Morning" : now.getHours() < 17 ? "Afternoon" : "Evening"}, {user?.name?.split(" ")[0]} 👋</h1>
+            <h1 className="text-2xl font-bold text-[#1A1A1A]">
+              Good {now.getHours() < 12 ? "Morning" : now.getHours() < 17 ? "Afternoon" : "Evening"}, {user?.name?.split(" ")[0]} 👋
+            </h1>
             <p className="text-[#6B7280] text-sm mt-0.5">
               {now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
             </p>
@@ -184,11 +200,15 @@ export default function DashboardPage() {
         {/* Stats Cards */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
-            { label: "Total Spent", value: formatRupiah(stats?.total_amount || 0), sub: `${stats?.total_transactions || 0} transactions`, color: "bg-white" },
-            { label: "Average/Transaction", value: formatRupiah(stats?.average_amount || 0), sub: `This month`, color: "bg-white" },
-            { label: "Anomalies Detected", value: stats?.anomaly_count || 0, sub: "This month", color: stats?.anomaly_count ? "bg-[#FEF2F2]" : "bg-white", textColor: stats?.anomaly_count ? "text-[#DC2626]" : "text-[#1A1A1A]" },
+            { label: "Total Spent", value: formatRupiah(stats?.total_amount || 0), sub: `${stats?.total_transactions || 0} transactions` },
+            { label: "Average/Transaction", value: formatRupiah(stats?.average_amount || 0), sub: "This month" },
+            {
+              label: "Anomalies Detected", value: stats?.anomaly_count || 0, sub: "This month",
+              color: stats?.anomaly_count ? "bg-[#FEF2F2]" : "bg-white",
+              textColor: stats?.anomaly_count ? "text-[#DC2626]" : "text-[#1A1A1A]"
+            },
           ].map((card, i) => (
-            <div key={i} className={`${card.color} rounded-2xl p-5 border border-[#EBEBEB]`}>
+            <div key={i} className={`${card.color || "bg-white"} rounded-2xl p-5 border border-[#EBEBEB]`}>
               <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">{card.label}</p>
               <p className={`text-2xl font-bold mt-1 ${card.textColor || "text-[#1A1A1A]"}`}>{card.value}</p>
               <p className="text-xs text-[#9CA3AF] mt-0.5">{card.sub}</p>
@@ -196,7 +216,8 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        {/* Row 1: Pie Chart + Anomaly/Recent */}
+        <div className="grid grid-cols-2 gap-6 mb-6">
           {/* Pie Chart */}
           <div className="bg-white rounded-2xl border border-[#EBEBEB] p-6">
             <h3 className="text-sm font-semibold text-[#1A1A1A] mb-4">Spending by Category</h3>
@@ -223,7 +244,6 @@ export default function DashboardPage() {
 
           {/* Anomaly Alerts + Recent */}
           <div className="space-y-4">
-            {/* Anomaly Alerts */}
             <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Bell size={15} className="text-[#DC2626]" />
@@ -255,7 +275,6 @@ export default function DashboardPage() {
               )}
             </div>
 
-            {/* Recent Transactions */}
             <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-[#1A1A1A]">Recent Transactions</h3>
@@ -281,6 +300,47 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Row 2: Monthly Trend Bar Chart */}
+        <div className="bg-white rounded-2xl border border-[#EBEBEB] p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-[#1A1A1A]">Monthly Spending Trend</h3>
+              <p className="text-xs text-[#9CA3AF] mt-0.5">Last 6 months overview</p>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-[#6B7280]">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#1A1A1A] inline-block" />Total Spent
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#DC2626] inline-block" />Anomalies
+              </span>
+            </div>
+          </div>
+
+          {monthlyStats.length > 0 && monthlyStats.some(m => m.total_amount > 0) ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={monthlyStats} barGap={4} barCategoryGap="30%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#9CA3AF" }} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={formatRupiahShort} tick={{ fontSize: 10, fill: "#9CA3AF" }} axisLine={false} tickLine={false} width={70} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    name === "total_amount" ? formatRupiah(value as number) : value,
+                    name === "total_amount" ? "Total Spent" : "Anomalies"
+                  ]}
+                  contentStyle={{ borderRadius: "12px", border: "1px solid #EBEBEB", fontSize: "12px" }}
+                />
+                <Bar dataKey="total_amount" fill="#1A1A1A" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="anomaly_count" fill="#FCA5A5" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-56 flex items-center justify-center text-[#9CA3AF] text-sm">
+              No spending data yet in the last 6 months.
+            </div>
+          )}
         </div>
       </main>
     </div>

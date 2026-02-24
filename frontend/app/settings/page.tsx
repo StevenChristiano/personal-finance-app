@@ -133,26 +133,45 @@ export default function SettingsPage() {
           )}
 
           {/* Visual threshold bar */}
-          <div className="mb-6 p-4 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB]">
+          <div className="mb-6 px-4 pt-4 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB]">
             <p className="text-xs text-[#6B7280] mb-3 font-medium">Score Distribution Preview</p>
             <div className="relative h-6 rounded-full overflow-hidden flex">
               <div className="bg-[#16A34A] flex items-center justify-center text-white text-[10px] font-medium transition-all"
                 style={{ width: `${warningThreshold}%` }}>
-                {warningThreshold > 15 && "Normal"}
+                {warningThreshold > 9 && "Normal"}
               </div>
               <div className="bg-[#F59E0B] flex items-center justify-center text-white text-[10px] font-medium transition-all"
                 style={{ width: `${anomalyThreshold - warningThreshold}%` }}>
-                {anomalyThreshold - warningThreshold > 8 && "Warning"}
+                {anomalyThreshold - warningThreshold > 9 && "Warning"}
               </div>
               <div className="bg-[#DC2626] flex items-center justify-center text-white text-[10px] font-medium transition-all flex-1">
-                {(100 - anomalyThreshold) > 8 && "Anomaly"}
+                {(100 - anomalyThreshold) > 9 && "Anomaly"}
               </div>
             </div>
-            <div className="flex justify-between text-[10px] text-[#9CA3AF] mt-1">
-              <span>0%</span>
-              <span>{warningThreshold}%</span>
-              <span>{anomalyThreshold}%</span>
-              <span>100%</span>
+            <div className="p-2 mt-2 flex justify-end">
+              <div className="space-y-1 w-40">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#16A34A]" />
+                  <div className="flex justify-between w-full text-[11px] font-medium text-[#16A34A]">
+                    <span>Normal</span>
+                    <span>0% – {warningThreshold - 1}%</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#F59E0B]" />
+                  <div className="flex justify-between w-full text-[11px] font-medium text-[#F59E0B]">
+                    <span>Warning</span>
+                    <span>{warningThreshold}% – {anomalyThreshold - 1}%</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-[#DC2626]" />
+                  <div className="flex justify-between w-full text-[11px] font-medium text-[#DC2626]">
+                    <span>Anomaly</span>
+                    <span>{anomalyThreshold}% – 100%</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -166,11 +185,11 @@ export default function SettingsPage() {
               <span className="text-sm font-bold text-[#F59E0B]">{warningThreshold}%</span>
             </div>
             <input
-              type="range" min={10} max={89} value={warningThreshold}
+              type="range" min={10} max={80} value={warningThreshold}
               onChange={(e) => {
                 const val = parseInt(e.target.value);
                 setWarningThreshold(val);
-                if (val >= anomalyThreshold) setAnomalyThreshold(val + 1);
+                if (anomalyThreshold - val < 10) setAnomalyThreshold(Math.min(val + 10, 90));
               }}
               className="w-full accent-[#F59E0B] h-2 rounded-full"
             />
@@ -189,11 +208,11 @@ export default function SettingsPage() {
               <span className="text-sm font-bold text-[#DC2626]">{anomalyThreshold}%</span>
             </div>
             <input
-              type="range" min={11} max={95} value={anomalyThreshold}
+              type="range" min={21} max={90} value={anomalyThreshold}
               onChange={(e) => {
                 const val = parseInt(e.target.value);
                 setAnomalyThreshold(val);
-                if (val <= warningThreshold) setWarningThreshold(val - 1);
+                if (val - warningThreshold < 10) setWarningThreshold(Math.max(val - 10, 10));
               }}
               className="w-full accent-[#DC2626] h-2 rounded-full"
             />
@@ -213,9 +232,9 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <p className="text-xs text-[#9CA3AF] mt-3">
+          {/* <p className="text-xs text-[#9CA3AF] mt-3">
             ⚠️ Note: These settings are saved locally and apply to the display only. To change the detection threshold in the model, update <code className="bg-[#F3F4F6] px-1 rounded">THRESHOLD_ANOMALY</code> and <code className="bg-[#F3F4F6] px-1 rounded">THRESHOLD_WARNING</code> in <code className="bg-[#F3F4F6] px-1 rounded">main.py</code>.
-          </p>
+          </p> */}
         </div>
 
         {/* Model Status */}
@@ -287,7 +306,7 @@ export default function SettingsPage() {
           <div className="space-y-2">
             {Object.entries(CATEGORY_DESCRIPTIONS).map(([cat, info]) => (
               <div key={cat} className="flex items-start gap-3 p-3 rounded-xl bg-[#F9FAFB]">
-                <span className="text-lg flex-shrink-0">{info.icon}</span>
+                <span className="text-lg shrink-0">{info.icon}</span>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-[#1A1A1A]">{cat}</p>

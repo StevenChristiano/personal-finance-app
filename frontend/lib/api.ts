@@ -1,4 +1,5 @@
 import axios from "axios";
+import { warn } from "console";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -108,6 +109,13 @@ export const categoryApi = {
   },
 };
 
+function getThresholds() {
+  if(typeof window === "undefined") return { warning: 0.50, anomaly: 0.60 };
+  const warning = parseInt(localStorage.getItem("threshold_warning") || "50") / 100;
+  const anomaly = parseInt(localStorage.getItem("threshold_anomaly") || "60") / 100;
+  return {warning, anomaly};
+}
+
 // ============================================================
 // TRANSACTIONS
 // ============================================================
@@ -118,7 +126,11 @@ export const transactionApi = {
   },
 
   getAll: async (month?: number, year?: number) => {
-    const params: Record<string, number> = {};
+    const { warning, anomaly } = getThresholds();
+    const params: Record<string, number> = {
+      warning_threshold: warning,
+      anomaly_threshold: anomaly,
+    };
     if (month) params.month = month;
     if (year) params.year = year;
     const res = await api.get("/transactions", { params });
@@ -136,11 +148,34 @@ export const transactionApi = {
 // ============================================================
 export const statsApi = {
   get: async (month?: number, year?: number): Promise<Stats> => {
-    const params: Record<string, number> = {};
+    const { warning, anomaly } = getThresholds();
+    const params: Record<string, number> = {
+      warning_threshold: warning,
+      anomaly_threshold: anomaly,
+    };
     if (month) params.month = month;
     if (year) params.year = year;
     const res = await api.get("/stats", { params });
     return res.data;
+  },
+
+  getMonthly: async (months: number = 6) => {
+    const { warning, anomaly } = getThresholds();
+    const res = await api.get("/stats/monthly", {
+      params: {
+        months,
+        warning_threshold: warning,
+        anomaly_threshold: anomaly,
+      },
+    });
+    return res.data as {
+      month: number;
+      year: number;
+      label: string;
+      total_amount: number;
+      transaction_count: number;
+      anomaly_count: number;
+    }[];
   },
 };
 

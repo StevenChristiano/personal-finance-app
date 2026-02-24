@@ -15,7 +15,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   Food: "Daily food & beverage expenses — meals, snacks, coffee, groceries, and dining out.",
   Transport: "Commuting and travel costs — fuel, ride-hailing (Grab/Gojek), parking, and public transport.",
-  Lifestyle: "Personal care and clothing — fashion, haircuts, gym, beauty products.",
+  Lifestyle: "Personal care and clothing — fashion, haircuts, beauty products.",
   Entertainment: "Leisure activities — movies, concerts, games, hobbies, and recreation.",
   Utilities: "Household bills — electricity, water, internet, and gas.",
   Telecommunication: "Phone-related expenses — mobile data plans and top-ups.",
@@ -102,7 +102,7 @@ export default function AddTransactionPage() {
         <div className="p-6 border-b border-[#EBEBEB]">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-[#1A1A1A] flex items-center justify-center text-white text-xs font-bold">F</div>
-            <span className="font-bold text-[#1A1A1A] text-lg" style={{ fontFamily: "Georgia, serif" }}>FinanceGuard</span>
+            <span className="font-bold text-[#1A1A1A] text-lg" style={{ fontFamily: "Georgia, serif" }}>SpendIt</span>
           </div>
         </div>
         <nav className="flex-1 p-4 space-y-1">
