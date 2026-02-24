@@ -1,6 +1,6 @@
 import calendar
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr
@@ -13,6 +13,7 @@ import pickle
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import RobustScaler, LabelEncoder
 from contextlib import asynccontextmanager
+from dateutil.relativedelta import relativedelta
 
 from database import get_db, User, Transaction, Category, UserModel, init_db
 from auth import hash_password, verify_password, create_access_token, get_current_user
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
 # ============================================================
 app = FastAPI(
     title="Personal Finance Anomaly Detection API",
-    description="Backend API untuk deteksi anomali pengeluaran pribadi menggunakan Isolation Forest",
+    description="Backend API for anomaly detection using Isolation Forest",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -238,13 +239,13 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"message": "Registrasi berhasil!", "user_id": user.id}
+    return {"message": "Registration Successful!", "user_id": user.id}
 
 @app.post("/auth/login", response_model=LoginResponse)
 def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == form.username).first()
     if not user or not verify_password(form.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Email atau password salah.")
+        raise HTTPException(status_code=401, detail="Wrong Email or Password.")
     token = create_access_token({"sub": str(user.id)})
     return LoginResponse(access_token=token, user_id=user.id, name=user.name)
 
@@ -267,7 +268,7 @@ def create_transaction(
 ):
     category = db.query(Category).filter(Category.id == req.category_id).first()
     if not category:
-        raise HTTPException(status_code=404, detail="Kategori tidak ditemukan.")
+        raise HTTPException(status_code=404, detail="Category Not Found.")
 
     ts             = datetime.fromisoformat(req.timestamp) if req.timestamp else datetime.now(timezone.utc)
     anomaly_score  = None
@@ -327,6 +328,8 @@ def create_transaction(
 def get_transactions(
     month: Optional[int] = None,
     year: Optional[int] = None,
+    warning_threshold: float = 0.50,
+    anomaly_threshold: float = 0.60,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -339,6 +342,13 @@ def get_transactions(
         )
     transactions = query.order_by(Transaction.timestamp.desc()).all()
     categories   = {cat.id: cat.name for cat in db.query(Category).all()}
+    
+    def dynamic_status(score):
+        if score is None: return None
+        if score >= anomaly_threshold: return "anomaly"
+        if score >= warning_threshold: return "warning"
+        return "normal"
+    
     return [{
         "id"            : t.id,
         "amount"        : t.amount,
@@ -347,7 +357,7 @@ def get_transactions(
         "note"          : t.note,
         "timestamp"     : t.timestamp,
         "anomaly_score" : t.anomaly_score,
-        "anomaly_status": t.anomaly_status,
+        "anomaly_status": dynamic_status(t.anomaly_score) if not t.is_excluded else None,
         "is_excluded"   : t.is_excluded
     } for t in transactions]
 
@@ -374,6 +384,8 @@ def delete_transaction(
 def get_stats(
     month: Optional[int] = None,
     year: Optional[int] = None,
+    warning_threshold: float = 0.50,
+    anomaly_threshold: float = 0.60,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -389,9 +401,16 @@ def get_stats(
     if not transactions:
         return {"total_transactions": 0, "total_amount": 0, "average_amount": 0,
                 "by_category": {}, "anomaly_count": 0}
-
+    
+    def dynamic_status(score):
+        if score is None: return None
+        if score >= anomaly_threshold: return "anomaly"
+        if score >= warning_threshold: return "warning"
+        return "normal"
+    
     total_amount  = sum(t.amount for t in transactions)
-    anomaly_count = sum(1 for t in transactions if t.anomaly_status == "anomaly")
+    anomaly_count = sum(1 for t in transactions 
+                        if not t.is_excluded and dynamic_status(t.anomaly_score) == "anomaly")
     by_category   = {}
     for t in transactions:
         cat_name = categories.get(t.category_id, "Unknown")
@@ -399,7 +418,7 @@ def get_stats(
             by_category[cat_name] = {"total": 0, "count": 0, "anomaly_count": 0}
         by_category[cat_name]["total"] += t.amount
         by_category[cat_name]["count"] += 1
-        if t.anomaly_status == "anomaly":
+        if not t.is_excluded and dynamic_status(t.anomaly_score) == "anomaly":
             by_category[cat_name]["anomaly_count"] += 1
 
     return {
@@ -409,6 +428,50 @@ def get_stats(
         "by_category"       : by_category,
         "anomaly_count"     : anomaly_count
     }
+
+@app.get("/stats/monthly")
+def get_monthly_stats(
+    months: int = 6,
+    warning_threshold: float = 0.50,
+    anomaly_threshold: float = 0.60,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Return spending stats for the last N months"""
+    
+    result = []
+    now = datetime.now(timezone.utc)
+    
+    for i in range(months - 1, -1, -1):
+        target = now - relativedelta(months=i)
+        m, y = target.month, target.year
+        last_day = calendar.monthrange(y, m)[1]
+        
+        txs = db.query(Transaction).filter(
+            Transaction.user_id == current_user.id,
+            Transaction.timestamp >= datetime(y, m, 1),
+            Transaction.timestamp <= datetime(y, m, last_day, 23, 59, 59)
+        ).all()
+        
+        def dynamic_status(score):
+            if score is None: return None
+            if score >= anomaly_threshold: return "anomaly"
+            if score >= warning_threshold: return "warning"
+            return "normal"
+        
+        total = sum(t.amount for t in txs)
+        anomaly_count = sum(1 for t in txs if not t.is_excluded and dynamic_status(t.anomaly_score) == "anomaly")
+        
+        result.append({
+            "month": m,
+            "year": y,
+            "label": datetime(y, m, 1).strftime("%b %Y"),
+            "total_amount": total,
+            "transaction_count": len(txs),
+            "anomaly_count": anomaly_count,
+        })
+    
+    return result
 
 # ============================================================
 # ENDPOINTS — COLD START & MODEL STATUS
@@ -448,7 +511,7 @@ def model_status(
 ):
     user_model = db.query(UserModel).filter(UserModel.user_id == current_user.id).first()
     if user_model and user_model.is_trained:
-        return {"status": "personal", "message": "Menggunakan model personal kamu",
+        return {"status": "personal", "message": "Using your Personal Model",
                 "transaction_count": user_model.transaction_count, "last_trained": user_model.last_trained}
     elif global_model:
         return {"status": "global", "message": "Using global model (cold start)"}
