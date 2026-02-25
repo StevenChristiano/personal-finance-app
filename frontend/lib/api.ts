@@ -1,5 +1,4 @@
 import axios from "axios";
-import { warn } from "console";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -77,7 +76,9 @@ export interface ColdStartStatus {
   is_ready: boolean;
   total_transactions: number;
   min_global: number;
+  min_personal: number;
   progress_global: number;
+  progress_personal: number;
   category_status: Record<string, { count: number; min_required: number; is_ready: boolean }>;
 }
 
@@ -110,10 +111,31 @@ export const categoryApi = {
 };
 
 function getThresholds() {
-  if(typeof window === "undefined") return { warning: 0.50, anomaly: 0.60 };
+  if (typeof window === "undefined") return { warning: 0.50, anomaly: 0.60 };
   const warning = parseInt(localStorage.getItem("threshold_warning") || "50") / 100;
   const anomaly = parseInt(localStorage.getItem("threshold_anomaly") || "60") / 100;
-  return {warning, anomaly};
+  return { warning, anomaly };
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+export const settingsApi = {
+  get: async () => {
+    const res = await api.get("/settings");
+    return res.data as { warning_threshold: number; anomaly_threshold: number };
+  },
+  update: async (data: { warning_threshold: number; anomaly_threshold: number }) => {
+    const res = await api.put("/settings", data);
+    return res.data as { warning_threshold: number; anomaly_threshold: number };
+  },
+};
+
+/** Sync localStorage cache from a /settings API response */
+export function syncThresholdCache(data: { warning_threshold: number; anomaly_threshold: number }) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("threshold_warning", String(Math.round(data.warning_threshold * 100)));
+  localStorage.setItem("threshold_anomaly", String(Math.round(data.anomaly_threshold * 100)));
 }
 
 // ============================================================
@@ -121,6 +143,7 @@ function getThresholds() {
 // ============================================================
 export const transactionApi = {
   create: async (data: TransactionCreate) => {
+    // Server reads thresholds from the user's DB row — no need to send as params
     const res = await api.post("/transactions", data);
     return res.data;
   },

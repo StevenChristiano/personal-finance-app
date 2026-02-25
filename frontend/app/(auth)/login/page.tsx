@@ -22,8 +22,9 @@ export default function LoginPage() {
       localStorage.setItem("token", user.access_token);
       localStorage.setItem("user", JSON.stringify({ user_id: user.user_id, name: user.name }));
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.response?.data?.detail || "Login gagal. Coba lagi.");
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { detail?: string } } };
+      setError(axiosErr.response?.data?.detail || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -42,7 +43,7 @@ export default function LoginPage() {
         <div className="mb-10 text-center">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#1A1A1A] mb-4">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="white"/>
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" fill="white" />
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-[#1A1A1A] tracking-tight" style={{ fontFamily: "Georgia, serif" }}>

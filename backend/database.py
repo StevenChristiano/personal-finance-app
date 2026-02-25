@@ -37,11 +37,15 @@ class User(Base):
     """Tabel users — menyimpan data user"""
     __tablename__ = "users"
 
-    id              = Column(Integer, primary_key=True, index=True)
-    email           = Column(String, unique=True, index=True, nullable=False)
-    name            = Column(String, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    created_at      = Column(DateTime, default=datetime.utcnow)
+    id                  = Column(Integer, primary_key=True, index=True)
+    email               = Column(String, unique=True, index=True, nullable=False)
+    name                = Column(String, nullable=False)
+    hashed_password     = Column(String, nullable=False)
+    created_at          = Column(DateTime, default=datetime.utcnow)
+
+    # User-configured anomaly thresholds (stored as decimals, e.g. 0.50)
+    warning_threshold   = Column(Float, default=0.50, nullable=False)
+    anomaly_threshold   = Column(Float, default=0.60, nullable=False)
 
     # Relasi ke transactions dan user_models
     transactions = relationship("Transaction", back_populates="user")
@@ -133,6 +137,20 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     print("✅ Database tables created!")
 
+    # Migrate existing databases: add threshold columns to users if missing
+    with engine.connect() as conn:
+        for col, default in [("warning_threshold", 0.50), ("anomaly_threshold", 0.60)]:
+            try:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        f"ALTER TABLE users ADD COLUMN {col} REAL NOT NULL DEFAULT {default}"
+                    )
+                )
+                conn.commit()
+                print(f"✅ Migration: added users.{col}")
+            except Exception:
+                pass  # Column already exists — safe to skip
+
     # Seed kategori default
     db = SessionLocal()
     try:
@@ -146,6 +164,7 @@ def init_db():
             print(f"ℹ️  Kategori sudah ada ({existing} kategori), skip seeding.")
     finally:
         db.close()
+
 
 
 if __name__ == "__main__":

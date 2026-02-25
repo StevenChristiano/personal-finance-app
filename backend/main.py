@@ -119,6 +119,10 @@ class ColdStartStatus(BaseModel):
     progress_global: float
     category_status: dict
 
+class SettingsUpdate(BaseModel):
+    warning_threshold: float = Field(..., ge=0.0, le=1.0)
+    anomaly_threshold: float = Field(..., ge=0.0, le=1.0)
+
 # ============================================================
 # HELPER: Load model user dari DB
 # ============================================================
@@ -132,7 +136,9 @@ def load_user_model(user_model: UserModel):
 # ============================================================
 # HELPER: Hitung anomaly score
 # ============================================================
-def calculate_score(amount, category_name, timestamp, model, scaler, encoder, norm_params):
+def calculate_score(amount, category_name, timestamp, model, scaler, encoder, norm_params,
+                    warning_threshold: float = THRESHOLD_WARNING,
+                    anomaly_threshold: float = THRESHOLD_ANOMALY):
     hour             = timestamp.hour
     day_of_week      = timestamp.weekday()
     amount_scaled    = scaler.transform(pd.DataFrame([[amount]], columns=["amount"]))[0][0]
@@ -143,9 +149,9 @@ def calculate_score(amount, category_name, timestamp, model, scaler, encoder, no
     max_s            = norm_params["max_score"]
     score            = float(np.clip((raw_score - min_s) / (max_s - min_s), 0, 1))
 
-    if score > THRESHOLD_ANOMALY:
+    if score > anomaly_threshold:
         anomaly_status = "anomaly"
-    elif score >= THRESHOLD_WARNING:
+    elif score >= warning_threshold:
         anomaly_status = "warning"
     else:
         anomaly_status = "normal"
@@ -234,7 +240,7 @@ def root():
 @app.post("/auth/register", status_code=201)
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == req.email).first():
-        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+        raise HTTPException(status_code=400, detail="Email is already registered.")
     user = User(email=req.email, name=req.name, hashed_password=hash_password(req.password))
     db.add(user)
     db.commit()
@@ -248,6 +254,32 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         raise HTTPException(status_code=401, detail="Wrong Email or Password.")
     token = create_access_token({"sub": str(user.id)})
     return LoginResponse(access_token=token, user_id=user.id, name=user.name)
+
+# ============================================================
+# ENDPOINTS — SETTINGS
+# ============================================================
+@app.get("/settings")
+def get_settings(current_user: User = Depends(get_current_user)):
+    return {
+        "warning_threshold": current_user.warning_threshold,
+        "anomaly_threshold": current_user.anomaly_threshold,
+    }
+
+@app.put("/settings")
+def update_settings(
+    req: SettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if req.warning_threshold >= req.anomaly_threshold:
+        raise HTTPException(status_code=400, detail="Warning threshold must be lower than anomaly threshold.")
+    current_user.warning_threshold = req.warning_threshold
+    current_user.anomaly_threshold = req.anomaly_threshold
+    db.commit()
+    return {
+        "warning_threshold": current_user.warning_threshold,
+        "anomaly_threshold": current_user.anomaly_threshold,
+    }
 
 # ============================================================
 # ENDPOINTS — CATEGORIES
@@ -275,6 +307,10 @@ def create_transaction(
     anomaly_status = None
     is_excluded    = category.is_excluded
 
+    # Use user's personal thresholds stored in DB
+    warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
+    anomaly_threshold = current_user.anomaly_threshold or THRESHOLD_ANOMALY
+
     if not is_excluded:
         user_model = db.query(UserModel).filter(
             UserModel.user_id == current_user.id,
@@ -290,7 +326,9 @@ def create_transaction(
 
         if model and category.name in encoder.classes_:
             anomaly_score, anomaly_status = calculate_score(
-                req.amount, category.name, ts, model, scaler, encoder, norm_params
+                req.amount, category.name, ts, model, scaler, encoder, norm_params,
+                warning_threshold=warning_threshold,
+                anomaly_threshold=anomaly_threshold,
             )
 
     transaction = Transaction(
