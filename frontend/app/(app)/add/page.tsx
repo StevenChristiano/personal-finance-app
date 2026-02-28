@@ -426,7 +426,7 @@ export default function AddTransactionPage() {
                                 </div>
 
                                 {/* Table */}
-                                <div className="overflow-auto max-h-[520px]">
+                                <div className="overflow-auto max-h-130">
                                     <table className="w-full text-sm border-collapse">
                                         <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#E5E7EB] z-10">
                                             <tr>
@@ -492,12 +492,12 @@ export default function AddTransactionPage() {
                                                                 {row.category_name}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-3 text-[13px] text-[#6B7280] max-w-[160px] truncate">
+                                                        <td className="px-4 py-3 text-[13px] text-[#6B7280] max-w-40 truncate">
                                                             {row.note || <span className="text-[#D1D5DB]">—</span>}
                                                         </td>
                                                         <td className="px-4 py-3">
                                                             {row.anomaly_score !== null && !row.is_excluded ? (
-                                                                <div className="flex items-center gap-2 min-w-[120px]">
+                                                                <div className="flex items-center gap-2 min-w-30">
                                                                     <div className="flex-1 h-1.5 bg-[#F3F4F6] rounded-full overflow-hidden">
                                                                         <div
                                                                             className={`h-full rounded-full ${row.anomaly_status === "anomaly" ? "bg-[#DC2626]" : row.anomaly_status === "warning" ? "bg-[#F59E0B]" : "bg-[#16A34A]"}`}
@@ -512,7 +512,7 @@ export default function AddTransactionPage() {
                                                                 <span className="text-[#D1D5DB] text-[12px]">—</span>
                                                             )}
                                                             {hasError && (
-                                                                <p className="text-[10px] text-[#DC2626] font-medium mt-1 max-w-[160px]">
+                                                                <p className="text-[10px] text-[#DC2626] font-medium mt-1 max-w-40">
                                                                     {row.errors.join("; ")}
                                                                 </p>
                                                             )}
