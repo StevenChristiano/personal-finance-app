@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { categoryApi, settingsApi, statsApi, syncThresholdCache, transactionApi, type Category, type Stats } from "@/lib/api";
-import { CheckCircle, AlertTriangle, AlertCircle, Info, X } from "lucide-react";
+import {
+    categoryApi, settingsApi, statsApi, syncThresholdCache, transactionApi,
+    type Category, type Stats, type PreviewRow,
+} from "@/lib/api";
+import {
+    CheckCircle, AlertTriangle, AlertCircle, Info, X,
+    Download, Upload, Trash2, FileSpreadsheet, AlertOctagon,
+} from "lucide-react";
 
 const CATEGORY_ICONS: Record<string, string> = {
     Food: "🍔", Transport: "🚗", Lifestyle: "👕", Entertainment: "🎮",
@@ -55,6 +61,14 @@ export default function AddTransactionPage() {
     const [categoryStats, setCategoryStats] = useState<Stats | null>(null);
     const [statsLoading, setStatsLoading] = useState(true);
 
+    // ── Bulk-upload state ──────────────────────────────────────────────────────
+    const fileInputRef            = useRef<HTMLInputElement>(null);
+    const [uploadLoading, setUploadLoading]   = useState(false);
+    const [uploadError, setUploadError]       = useState("");
+    const [previewRows, setPreviewRows]       = useState<PreviewRow[] | null>(null);
+    const [savingBulk, setSavingBulk]         = useState(false);
+    const [bulkSuccess, setBulkSuccess]       = useState("");
+
     const fetchStats = () => {
         setStatsLoading(true);
         statsApi.get().then(setCategoryStats).catch(console.error).finally(() => setStatsLoading(false));
@@ -104,6 +118,70 @@ export default function AddTransactionPage() {
             setError(err instanceof Error ? err.message : "Failed to add transaction.");
         } finally {
             setLoading(false);
+        }
+    };
+
+    // ── Bulk upload handlers ───────────────────────────────────────────────────
+    const handleDownloadTemplate = async () => {
+        try { await transactionApi.downloadTemplate(); }
+        catch { setUploadError("Failed to download template."); }
+    };
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadError("");
+        setUploadLoading(true);
+        setBulkSuccess("");
+        try {
+            const preview = await transactionApi.uploadPreview(file);
+            setPreviewRows(preview.rows);
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                || (err instanceof Error ? err.message : "Failed to process file.");
+            setUploadError(msg);
+        } finally {
+            setUploadLoading(false);
+            if (fileInputRef.current) fileInputRef.current.value = "";
+        }
+    };
+
+    const handleDeletePreviewRow = (rowIdx: number) => {
+        setPreviewRows((prev) => prev ? prev.filter((_, i) => i !== rowIdx) : null);
+    };
+
+    const handleCancelPreview = () => {
+        setPreviewRows(null);
+        setUploadError("");
+    };
+
+    const handleSaveBulk = async () => {
+        if (!previewRows || previewRows.length === 0) return;
+        const validRows = previewRows.filter((r) => r.errors.length === 0 && r.category_id !== null);
+        if (validRows.length === 0) {
+            setUploadError("No valid rows to save. Fix errors or remove invalid rows.");
+            return;
+        }
+        setSavingBulk(true);
+        setUploadError("");
+        try {
+            const result = await transactionApi.bulkSave(
+                validRows.map((r) => ({
+                    amount     : r.amount,
+                    category_id: r.category_id!,
+                    note       : r.note ?? undefined,
+                    timestamp  : r.timestamp,
+                }))
+            );
+            setBulkSuccess(result.message);
+            setPreviewRows(null);
+            fetchStats();
+        } catch (err: unknown) {
+            const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+                || (err instanceof Error ? err.message : "Failed to save transactions.");
+            setUploadError(msg);
+        } finally {
+            setSavingBulk(false);
         }
     };
 
@@ -188,6 +266,16 @@ export default function AddTransactionPage() {
                             <div>
                                 <div className="flex items-center gap-2 mb-3">
                                     <label className="text-xs font-bold text-[#6B7280] uppercase tracking-wider">Category</label>
+                                    <div className="relative group">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowCategoryInfo(true)}
+                                            className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#F3F4F6] hover:bg-[#1A1A1A] hover:text-white text-[#6B7280] transition-all text-[10px] font-bold uppercase tracking-wide"
+                                        >
+                                            <Info size={11} />
+                                            Category Guide
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                                     {categories.map((cat) => (
@@ -225,6 +313,235 @@ export default function AddTransactionPage() {
                             </button>
                         </form>
                     </div>
+
+                    {/* ── Bulk Upload Card ── */}
+                    <div className="bg-white rounded-2xl border border-[#EBEBEB] p-6">
+                        <div className="flex items-start gap-4 mb-5">
+                            <div className="p-2.5 rounded-xl bg-[#F3F4F6]">
+                                <FileSpreadsheet size={22} className="text-[#374151]" />
+                            </div>
+                            <div>
+                                <h2 className="text-[15px] font-bold text-[#1A1A1A]">Bulk Upload via Excel</h2>
+                                <p className="text-[13px] text-[#6B7280] mt-0.5">Add multiple transactions at once — download the template, fill in your data, then upload.</p>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                            {/* Download Template */}
+                            <button
+                                type="button"
+                                onClick={handleDownloadTemplate}
+                                className="flex items-center gap-2 px-5 py-3 rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] text-[#374151] font-semibold text-sm hover:border-[#1A1A1A] hover:bg-white transition-all"
+                            >
+                                <Download size={16} />
+                                Download Template
+                            </button>
+
+                            {/* Upload Excel */}
+                            <button
+                                type="button"
+                                disabled={uploadLoading}
+                                onClick={() => fileInputRef.current?.click()}
+                                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-[#1A1A1A] text-white font-semibold text-sm hover:bg-[#333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {uploadLoading
+                                    ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    : <Upload size={16} />
+                                }
+                                {uploadLoading ? "Processing…" : "Upload Excel File"}
+                            </button>
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".xlsx,.xls,.csv"
+                                className="hidden"
+                                onChange={handleFileChange}
+                            />
+                        </div>
+
+                        {/* Bulk success banner */}
+                        {bulkSuccess && (
+                            <div className="mt-4 flex items-center gap-3 px-4 py-3 rounded-xl bg-[#F0FDF4] border border-[#BBF7D0] text-[#16A34A] text-sm font-semibold">
+                                <CheckCircle size={16} />
+                                {bulkSuccess}
+                            </div>
+                        )}
+
+                        {/* Upload error banner */}
+                        {uploadError && (
+                            <div className="mt-4 flex items-start gap-3 px-4 py-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-[#DC2626] text-sm">
+                                <AlertOctagon size={16} className="mt-0.5 shrink-0" />
+                                <span>{uploadError}</span>
+                            </div>
+                        )}
+
+                        <p className="text-[11px] text-[#9CA3AF] mt-4 font-medium">
+                            Accepted formats: <span className="font-bold">.xlsx, .xls, .csv</span> &nbsp;·&nbsp; Required columns: <span className="font-bold">date, amount, category</span> &nbsp;·&nbsp; Optional: <span className="font-bold">note</span>
+                        </p>
+                    </div>
+
+                    {/* ── Inline Preview ── */}
+                    {previewRows && (() => {
+                        const validCount   = previewRows.filter((r) => r.errors.length === 0 && r.category_id !== null).length;
+                        const invalidCount = previewRows.length - validCount;
+                        return (
+                            <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden">
+                                {/* Preview Header */}
+                                <div className="px-5 py-4 border-b border-[#F3F4F6] flex items-center justify-between gap-4 flex-wrap">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 rounded-xl bg-[#F3F4F6]">
+                                            <FileSpreadsheet size={18} className="text-[#374151]" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-[14px] font-bold text-[#1A1A1A]">
+                                                Data Preview
+                                                <span className="ml-2 text-[12px] font-semibold text-[#9CA3AF]">({previewRows.length} row{previewRows.length !== 1 ? "s" : ""})</span>
+                                            </h3>
+                                            <p className="text-[11px] text-[#6B7280] mt-0.5">
+                                                <span className="text-[#16A34A] font-semibold">{validCount} valid</span>
+                                                {invalidCount > 0 && <span className="text-[#DC2626] font-semibold"> &nbsp;·&nbsp; {invalidCount} with errors</span>}
+                                                &nbsp;·&nbsp; Remove unwanted rows, then save
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        {uploadError && <p className="text-[12px] text-[#DC2626] font-medium">{uploadError}</p>}
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelPreview}
+                                            className="px-4 py-2 rounded-xl border border-[#E5E7EB] text-[#374151] font-semibold text-sm hover:border-[#9CA3AF] transition-all"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={savingBulk || validCount === 0}
+                                            onClick={handleSaveBulk}
+                                            className="px-4 py-2 rounded-xl bg-[#1A1A1A] text-white font-semibold text-sm hover:bg-[#333] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            {savingBulk && <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                                            {savingBulk ? "Saving…" : `Save ${validCount} Transaction${validCount !== 1 ? "s" : ""}`}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Table */}
+                                <div className="overflow-auto max-h-[520px]">
+                                    <table className="w-full text-sm border-collapse">
+                                        <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#E5E7EB] z-10">
+                                            <tr>
+                                                {["#", "Date & Time", "Amount (Rp)", "Category", "Note", "Anomaly Score", "Status", ""].map((h) => (
+                                                    <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-[#9CA3AF] uppercase tracking-wider whitespace-nowrap">
+                                                        {h}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {previewRows.map((row, idx) => {
+                                                const hasError = row.errors.length > 0;
+                                                const rowBg = hasError
+                                                    ? "bg-[#FEF2F2]"
+                                                    : row.anomaly_status === "anomaly"
+                                                        ? "bg-[#FEF2F2]"
+                                                        : row.anomaly_status === "warning"
+                                                            ? "bg-[#FFFBEB]"
+                                                            : "bg-white";
+
+                                                const statusBadge = () => {
+                                                    if (hasError) return (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#DC2626]">
+                                                            <AlertOctagon size={10} /> Error
+                                                        </span>
+                                                    );
+                                                    if (row.is_excluded) return (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#F3F4F6] text-[#6B7280]">
+                                                            No Scan
+                                                        </span>
+                                                    );
+                                                    if (row.anomaly_status === "anomaly") return (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEE2E2] text-[#DC2626]">
+                                                            <AlertCircle size={10} /> Anomaly
+                                                        </span>
+                                                    );
+                                                    if (row.anomaly_status === "warning") return (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#D97706]">
+                                                            <AlertTriangle size={10} /> Warning
+                                                        </span>
+                                                    );
+                                                    if (row.anomaly_status === "normal") return (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#16A34A]">
+                                                            <CheckCircle size={10} /> Normal
+                                                        </span>
+                                                    );
+                                                    return <span className="text-[#9CA3AF] text-[10px]">—</span>;
+                                                };
+
+                                                return (
+                                                    <tr key={idx} className={`${rowBg} border-b border-[#F3F4F6] hover:brightness-[0.97] transition-all`}>
+                                                        <td className="px-4 py-3 text-[12px] font-bold text-[#9CA3AF]">{row._row}</td>
+                                                        <td className="px-4 py-3 text-[13px] font-medium text-[#374151] whitespace-nowrap">
+                                                            {new Date(row.timestamp).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-[13px] font-black text-[#1A1A1A] whitespace-nowrap">
+                                                            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(row.amount)}
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap">
+                                                            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-[#374151]">
+                                                                <span>{CATEGORY_ICONS[row.category_name] || "💳"}</span>
+                                                                {row.category_name}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-[13px] text-[#6B7280] max-w-[160px] truncate">
+                                                            {row.note || <span className="text-[#D1D5DB]">—</span>}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            {row.anomaly_score !== null && !row.is_excluded ? (
+                                                                <div className="flex items-center gap-2 min-w-[120px]">
+                                                                    <div className="flex-1 h-1.5 bg-[#F3F4F6] rounded-full overflow-hidden">
+                                                                        <div
+                                                                            className={`h-full rounded-full ${row.anomaly_status === "anomaly" ? "bg-[#DC2626]" : row.anomaly_status === "warning" ? "bg-[#F59E0B]" : "bg-[#16A34A]"}`}
+                                                                            style={{ width: `${((row.anomaly_score ?? 0) * 100).toFixed(1)}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    <span className="text-[11px] font-black text-[#374151] tabular-nums">
+                                                                        {((row.anomaly_score ?? 0) * 100).toFixed(1)}%
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-[#D1D5DB] text-[12px]">—</span>
+                                                            )}
+                                                            {hasError && (
+                                                                <p className="text-[10px] text-[#DC2626] font-medium mt-1 max-w-[160px]">
+                                                                    {row.errors.join("; ")}
+                                                                </p>
+                                                            )}
+                                                        </td>
+                                                        <td className="px-4 py-3">{statusBadge()}</td>
+                                                        <td className="px-4 py-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeletePreviewRow(idx)}
+                                                                className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] transition-all"
+                                                                title="Remove row"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                    {previewRows.length === 0 && (
+                                        <div className="py-10 text-center text-sm text-[#9CA3AF] font-medium">
+                                            All rows removed. Click <span className="font-bold">Cancel</span> to dismiss.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                 </div>
 
@@ -299,33 +616,76 @@ export default function AddTransactionPage() {
                         )}
                     </div>
 
-                    {/* Permanent Category Guide Card */}
-                    <div className="bg-[#1A1A1A] rounded-2xl p-5 text-white">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Info size={18} className="text-[#9CA3AF]" />
-                            <h2 className="text-sm font-semibold text-white">Category Guide</h2>
-                        </div>
-                        <div className="space-y-5">
-                            {Object.entries(CATEGORY_DESCRIPTIONS).slice(0, 4).map(([cat, desc]) => (
-                                <div key={cat} className="flex gap-3 items-start border-l-[3px] border-[#333] pl-3">
-                                    <span className="text-xl shrink-0 leading-none">{CATEGORY_ICONS[cat]}</span>
-                                    <div>
-                                        <p className="text-[13px] font-bold text-white mb-1">{cat}</p>
-                                        <p className="text-[11px] text-[#9CA3AF] leading-relaxed line-clamp-2">{desc}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-[10px] font-bold text-[#6B7280] uppercase tracking-widest mt-6 text-center border-t border-white/10 pt-4">
-                            SpendIt Engine v1.0
-                        </p>
-                    </div>
-
                 </div>
 
             </div>{/* end grid */}
 
-            {/* The modal is no longer needed as the guide is permanently in the sidebar */}
+            {/* ── Category Guide Modal ── */}
+            {showCategoryInfo && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
+                    style={{ background: "rgba(0,0,0,0.45)" }}
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowCategoryInfo(false); }}
+                >
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6] shrink-0">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 rounded-lg bg-[#F3F4F6]">
+                                    <Info size={15} className="text-[#374151]" />
+                                </div>
+                                <div>
+                                    <h2 className="text-[15px] font-bold text-[#1A1A1A]">Category Guide</h2>
+                                    <p className="text-[11px] text-[#9CA3AF] mt-0.5">What each category covers &amp; whether it&apos;s scanned for anomalies</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowCategoryInfo(false)}
+                                className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F3F4F6] transition-all"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        {/* Category list */}
+                        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-1">
+                            {/* Monitored */}
+                            <p className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest mb-2">Monitored for anomalies</p>
+                            {Object.entries(CATEGORY_DESCRIPTIONS)
+                                .filter(([, desc]) => !desc.includes("Not monitored"))
+                                .map(([cat, desc]) => (
+                                    <div key={cat} className="flex items-start gap-3 p-3 rounded-xl hover:bg-[#F9FAFB] transition-colors group">
+                                        <span className="text-2xl shrink-0 mt-0.5 group-hover:scale-110 transition-transform">{CATEGORY_ICONS[cat] || "💳"}</span>
+                                        <div>
+                                            <p className="text-[13px] font-bold text-[#1A1A1A] leading-none">{cat}</p>
+                                            <p className="text-[12px] text-[#6B7280] mt-1 leading-relaxed">{desc}</p>
+                                        </div>
+                                    </div>
+                                ))}
+
+                            {/* Divider */}
+                            <div className="pt-3 pb-1">
+                                <p className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest">Not monitored <span className="font-normal normal-case">(occasional / irregular expenses)</span></p>
+                            </div>
+                            {Object.entries(CATEGORY_DESCRIPTIONS)
+                                .filter(([, desc]) => desc.includes("Not monitored"))
+                                .map(([cat, desc]) => (
+                                    <div key={cat} className="flex items-start gap-3 p-3 rounded-xl hover:bg-[#F9FAFB] transition-colors group">
+                                        <span className="text-2xl shrink-0 mt-0.5 group-hover:scale-110 transition-transform">{CATEGORY_ICONS[cat] || "💳"}</span>
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-[13px] font-bold text-[#1A1A1A] leading-none">{cat}</p>
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#F3F4F6] text-[#9CA3AF] uppercase tracking-wide">no scan</span>
+                                            </div>
+                                            <p className="text-[12px] text-[#6B7280] mt-1 leading-relaxed">{desc.replace(/ \(Not monitored[^)]*\)/, "")}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

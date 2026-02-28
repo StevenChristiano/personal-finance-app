@@ -82,6 +82,31 @@ export interface ColdStartStatus {
   category_status: Record<string, { count: number; min_required: number; is_ready: boolean }>;
 }
 
+export interface PreviewRow {
+  _row: number;
+  timestamp: string;
+  amount: number;
+  category_name: string;
+  category_id: number | null;
+  note: string | null;
+  anomaly_score: number | null;
+  anomaly_status: "normal" | "warning" | "anomaly" | null;
+  is_excluded: boolean;
+  errors: string[];
+}
+
+export interface BulkUploadPreview {
+  rows: PreviewRow[];
+  total: number;
+}
+
+export interface BulkTransactionItem {
+  amount: number;
+  category_id: number;
+  note?: string;
+  timestamp?: string;
+}
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -163,6 +188,35 @@ export const transactionApi = {
   delete: async (id: number) => {
     const res = await api.delete(`/transactions/${id}`);
     return res.data;
+  },
+
+  downloadTemplate: async () => {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`${API_URL}/transactions/template`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error("Failed to download template");
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = "transaction_template.xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  uploadPreview: async (file: File): Promise<BulkUploadPreview> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await api.post("/transactions/upload-preview", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data as BulkUploadPreview;
+  },
+
+  bulkSave: async (transactions: BulkTransactionItem[]) => {
+    const res = await api.post("/transactions/bulk-save", { transactions });
+    return res.data as { saved: number; message: string };
   },
 };
 

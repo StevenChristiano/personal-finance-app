@@ -50,8 +50,9 @@ export default function SettingsPage() {
 
     const handleSave = async () => {
         setError("");
-        if (warningThreshold >= anomalyThreshold) { setError("Warning threshold must be lower than anomaly threshold."); return; }
-        if (warningThreshold < 10 || anomalyThreshold > 95) { setError("Thresholds must be between 10% and 95%."); return; }
+        if (warningThreshold < 10) { setError("Warning threshold must be at least 10% (normal zone must be ≥ 10%)."); return; }
+        if (anomalyThreshold > 90) { setError("Anomaly threshold must be at most 90% (anomaly zone must be ≥ 10%)."); return; }
+        if (anomalyThreshold - warningThreshold < 10) { setError("Warning and anomaly thresholds must be at least 10% apart (warning zone must be ≥ 10%)."); return; }
         setSaving(true);
         try {
             const data = await settingsApi.update({
@@ -125,10 +126,10 @@ export default function SettingsPage() {
                                     <span className="text-sm text-[#9CA3AF]">%</span>
                                 </div>
                             </div>
-                            <input type="range" min="10" max="90" value={warningThreshold}
+                            <input type="range" min="10" max={anomalyThreshold - 10} value={warningThreshold}
                                 onChange={(e) => setWarningThreshold(parseInt(e.target.value))}
                                 className="w-full accent-[#D97706]" />
-                            <div className="flex justify-between text-xs text-[#9CA3AF] mt-1"><span>10%</span><span>90%</span></div>
+                            <div className="flex justify-between text-xs text-[#9CA3AF] mt-1"><span>10%</span><span>{anomalyThreshold - 10}%</span></div>
                         </div>
 
                         {/* Anomaly Threshold */}
@@ -140,10 +141,10 @@ export default function SettingsPage() {
                                     <span className="text-sm text-[#9CA3AF]">%</span>
                                 </div>
                             </div>
-                            <input type="range" min="20" max="95" value={anomalyThreshold}
+                            <input type="range" min={warningThreshold + 10} max="90" value={anomalyThreshold}
                                 onChange={(e) => setAnomalyThreshold(parseInt(e.target.value))}
                                 className="w-full accent-[#DC2626]" />
-                            <div className="flex justify-between text-xs text-[#9CA3AF] mt-1"><span>20%</span><span>95%</span></div>
+                            <div className="flex justify-between text-xs text-[#9CA3AF] mt-1"><span>{warningThreshold + 10}%</span><span>90%</span></div>
                         </div>
 
                         {/* Preview Bar */}
