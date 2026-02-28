@@ -1,15 +1,20 @@
 import calendar
+import io
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
 import pickle
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import RobustScaler, LabelEncoder
 from contextlib import asynccontextmanager
@@ -119,6 +124,19 @@ class ColdStartStatus(BaseModel):
     progress_global: float
     category_status: dict
 
+class SettingsUpdate(BaseModel):
+    warning_threshold: float = Field(..., ge=0.0, le=1.0)
+    anomaly_threshold: float = Field(..., ge=0.0, le=1.0)
+
+class BulkTransactionItem(BaseModel):
+    amount: float = Field(..., gt=0)
+    category_id: int
+    note: Optional[str] = None
+    timestamp: Optional[str] = None
+
+class BulkTransactionSave(BaseModel):
+    transactions: List[BulkTransactionItem]
+
 # ============================================================
 # HELPER: Load model user dari DB
 # ============================================================
@@ -132,7 +150,9 @@ def load_user_model(user_model: UserModel):
 # ============================================================
 # HELPER: Hitung anomaly score
 # ============================================================
-def calculate_score(amount, category_name, timestamp, model, scaler, encoder, norm_params):
+def calculate_score(amount, category_name, timestamp, model, scaler, encoder, norm_params,
+                    warning_threshold: float = THRESHOLD_WARNING,
+                    anomaly_threshold: float = THRESHOLD_ANOMALY):
     hour             = timestamp.hour
     day_of_week      = timestamp.weekday()
     amount_scaled    = scaler.transform(pd.DataFrame([[amount]], columns=["amount"]))[0][0]
@@ -143,9 +163,9 @@ def calculate_score(amount, category_name, timestamp, model, scaler, encoder, no
     max_s            = norm_params["max_score"]
     score            = float(np.clip((raw_score - min_s) / (max_s - min_s), 0, 1))
 
-    if score > THRESHOLD_ANOMALY:
+    if score > anomaly_threshold:
         anomaly_status = "anomaly"
-    elif score >= THRESHOLD_WARNING:
+    elif score >= warning_threshold:
         anomaly_status = "warning"
     else:
         anomaly_status = "normal"
@@ -234,7 +254,7 @@ def root():
 @app.post("/auth/register", status_code=201)
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == req.email).first():
-        raise HTTPException(status_code=400, detail="Email sudah terdaftar.")
+        raise HTTPException(status_code=400, detail="Email is already registered.")
     user = User(email=req.email, name=req.name, hashed_password=hash_password(req.password))
     db.add(user)
     db.commit()
@@ -248,6 +268,36 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
         raise HTTPException(status_code=401, detail="Wrong Email or Password.")
     token = create_access_token({"sub": str(user.id)})
     return LoginResponse(access_token=token, user_id=user.id, name=user.name)
+
+# ============================================================
+# ENDPOINTS — SETTINGS
+# ============================================================
+@app.get("/settings")
+def get_settings(current_user: User = Depends(get_current_user)):
+    return {
+        "warning_threshold": current_user.warning_threshold,
+        "anomaly_threshold": current_user.anomaly_threshold,
+    }
+
+@app.put("/settings")
+def update_settings(
+    req: SettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if req.warning_threshold < 0.10:
+        raise HTTPException(status_code=400, detail="Warning threshold must be at least 10% (normal zone must be ≥ 10%).")
+    if req.anomaly_threshold > 0.90:
+        raise HTTPException(status_code=400, detail="Anomaly threshold must be at most 90% (anomaly zone must be ≥ 10%).")
+    if (round(req.anomaly_threshold - req.warning_threshold, 2)) < 0.10:
+        raise HTTPException(status_code=400, detail="Warning threshold and anomaly threshold must be at least 10% apart (warning zone must be ≥ 10%).")
+    current_user.warning_threshold = req.warning_threshold
+    current_user.anomaly_threshold = req.anomaly_threshold
+    db.commit()
+    return {
+        "warning_threshold": current_user.warning_threshold,
+        "anomaly_threshold": current_user.anomaly_threshold,
+    }
 
 # ============================================================
 # ENDPOINTS — CATEGORIES
@@ -275,6 +325,10 @@ def create_transaction(
     anomaly_status = None
     is_excluded    = category.is_excluded
 
+    # Use user's personal thresholds stored in DB
+    warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
+    anomaly_threshold = current_user.anomaly_threshold or THRESHOLD_ANOMALY
+
     if not is_excluded:
         user_model = db.query(UserModel).filter(
             UserModel.user_id == current_user.id,
@@ -290,7 +344,9 @@ def create_transaction(
 
         if model and category.name in encoder.classes_:
             anomaly_score, anomaly_status = calculate_score(
-                req.amount, category.name, ts, model, scaler, encoder, norm_params
+                req.amount, category.name, ts, model, scaler, encoder, norm_params,
+                warning_threshold=warning_threshold,
+                anomaly_threshold=anomaly_threshold,
             )
 
     transaction = Transaction(
@@ -472,6 +528,322 @@ def get_monthly_stats(
         })
     
     return result
+
+# ============================================================
+# ENDPOINTS — EXCEL TEMPLATE & BULK UPLOAD
+# ============================================================
+
+@app.get("/transactions/template")
+def download_template(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Generate and return a filled Excel template for bulk transaction upload"""
+    categories = db.query(Category).all()
+    cat_names  = [c.name for c in categories]
+
+    wb = openpyxl.Workbook()
+
+    # ── Sheet 1: Transactions ──────────────────────────────
+    ws = wb.active
+    ws.title = "Transactions"
+
+    header_fill   = PatternFill("solid", fgColor="1A1A1A")
+    header_font   = Font(color="FFFFFF", bold=True, size=11)
+    header_align  = Alignment(horizontal="center", vertical="center")
+    thin_border   = Border(
+        left=Side(style="thin", color="E5E7EB"),
+        right=Side(style="thin", color="E5E7EB"),
+        top=Side(style="thin", color="E5E7EB"),
+        bottom=Side(style="thin", color="E5E7EB"),
+    )
+
+    headers = ["date", "amount", "category", "note"]
+    col_widths = [22, 18, 22, 30]
+    for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font   = header_font
+        cell.fill   = header_fill
+        cell.alignment = header_align
+        cell.border = thin_border
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+    ws.row_dimensions[1].height = 22
+
+    # Example rows
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    examples = [
+        [now_str, 50000, "Food",     "Lunch with team"],
+        [now_str, 25000, "Transport", "Gojek to office"],
+        [now_str, 150000, "Entertainment", "Cinema ticket"],
+    ]
+    example_fill = PatternFill("solid", fgColor="F9FAFB")
+    for row_idx, row_data in enumerate(examples, start=2):
+        for col_idx, value in enumerate(row_data, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.fill   = example_fill
+            cell.border = thin_border
+            cell.alignment = Alignment(vertical="center")
+
+    # Dropdown validation for category column (col 3)
+    cat_list = ",".join(cat_names)
+    dv = DataValidation(type="list", formula1=f'"{cat_list}"', allow_blank=True)
+    dv.sqref = "C2:C10000"
+    ws.add_data_validation(dv)
+
+    # Freeze header row
+    ws.freeze_panes = "A2"
+
+    # ── Sheet 2: Category Reference ───────────────────────
+    ws2 = wb.create_sheet("Category Reference")
+    ws2.column_dimensions["A"].width = 25
+    ws2.column_dimensions["B"].width = 18
+    ws2.column_dimensions["C"].width = 50
+
+    ref_headers = ["Category Name", "Anomaly Scan", "Description"]
+    ref_fill    = PatternFill("solid", fgColor="1A1A1A")
+    for ci, hdr in enumerate(ref_headers, start=1):
+        cell = ws2.cell(row=1, column=ci, value=hdr)
+        cell.font  = Font(color="FFFFFF", bold=True)
+        cell.fill  = ref_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+    ws2.row_dimensions[1].height = 22
+
+    descriptions = {
+        "Food": "Daily food & beverage expenses",
+        "Transport": "Commuting and travel costs",
+        "Lifestyle": "Personal care and clothing",
+        "Entertainment": "Leisure activities",
+        "Utilities": "Household bills",
+        "Telecommunication": "Phone-related expenses",
+        "Subscription": "Recurring digital services",
+        "Health": "Medical expenses (Not monitored)",
+        "Education": "Learning costs (Not monitored)",
+        "Big Expense": "Large one-time purchases (Not monitored)",
+    }
+    for ri, cat in enumerate(categories, start=2):
+        ws2.cell(row=ri, column=1, value=cat.name).border = thin_border
+        scan_cell = ws2.cell(row=ri, column=2, value="No" if cat.is_excluded else "Yes")
+        scan_cell.border = thin_border
+        scan_cell.font = Font(color="DC2626" if cat.is_excluded else "16A34A", bold=True)
+        scan_cell.alignment = Alignment(horizontal="center")
+        desc_cell = ws2.cell(row=ri, column=3, value=descriptions.get(cat.name, ""))
+        desc_cell.border = thin_border
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="transaction_template.xlsx"'},
+    )
+
+
+@app.post("/transactions/upload-preview")
+async def upload_preview(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Parse uploaded Excel/CSV, run anomaly detection, return preview (nothing saved yet)"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file uploaded.")
+
+    filename_lower = file.filename.lower()
+    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls") or filename_lower.endswith(".csv")):
+        raise HTTPException(status_code=400, detail="Only .xlsx, .xls, or .csv files are accepted.")
+
+    content = await file.read()
+    buf     = io.BytesIO(content)
+
+    try:
+        if filename_lower.endswith(".csv"):
+            df = pd.read_csv(buf)
+        else:
+            df = pd.read_excel(buf, engine="openpyxl", sheet_name=0)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
+
+    # Normalise column names
+    df.columns = [str(c).strip().lower() for c in df.columns]
+
+    required_cols = {"date", "amount", "category"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required columns: {', '.join(missing)}. Expected: date, amount, category, note"
+        )
+
+    # Drop completely empty rows
+    df = df.dropna(subset=["date", "amount", "category"], how="all").reset_index(drop=True)
+    if df.empty:
+        raise HTTPException(status_code=400, detail="The file contains no valid data rows.")
+
+    categories   = {c.name.lower(): c for c in db.query(Category).all()}
+    cat_id_map   = {c.name.lower(): c.id for c in db.query(Category).all()}
+
+    warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
+    anomaly_threshold = current_user.anomaly_threshold or THRESHOLD_ANOMALY
+
+    # Load model
+    user_model_row = db.query(UserModel).filter(
+        UserModel.user_id == current_user.id,
+        UserModel.is_trained == True
+    ).first()
+    if user_model_row:
+        model, scaler, encoder, norm_params = load_user_model(user_model_row)
+    elif global_model:
+        model, scaler, encoder, norm_params = global_model, global_scaler, global_encoder, global_norm_params
+    else:
+        model = None
+
+    preview_rows = []
+    for idx, row in df.iterrows():
+        row_num = int(idx) + 2  # Excel row (1 = header)
+        errors  = []
+
+        # Parse amount
+        try:
+            amount = float(row["amount"])
+            if amount <= 0:
+                errors.append("Amount must be > 0")
+        except (ValueError, TypeError):
+            amount = 0
+            errors.append("Invalid amount")
+
+        # Parse category
+        raw_cat = str(row["category"]).strip() if pd.notna(row.get("category")) else ""
+        cat_lower = raw_cat.lower()
+        if cat_lower not in categories:
+            errors.append(f"Unknown category: '{raw_cat}'")
+            category_obj = None
+            category_id  = None
+        else:
+            category_obj = categories[cat_lower]
+            category_id  = category_obj.id
+
+        # Parse timestamp
+        raw_date = row.get("date", "")
+        try:
+            if pd.isna(raw_date):
+                ts = datetime.now()            # naive local time fallback
+            else:
+                ts = pd.to_datetime(raw_date)
+                # Keep naive — user entered local time; don't attach UTC so
+                # the ISO string has no offset and the browser renders it as-is
+                if ts.tzinfo is not None:
+                    # If tz-aware, convert to naive local equivalent
+                    ts = ts.replace(tzinfo=None)
+                ts = ts.to_pydatetime()        # convert Pandas Timestamp → Python datetime
+        except Exception:
+            ts = datetime.now()                # naive local time fallback
+            errors.append("Invalid date format — defaulting to now")
+
+        # Parse note
+        note = str(row["note"]).strip() if "note" in df.columns and pd.notna(row.get("note")) else None
+
+        # Anomaly detection
+        anomaly_score  = None
+        anomaly_status = None
+        is_excluded    = category_obj.is_excluded if category_obj else False
+
+        if not errors and not is_excluded and model and category_obj:
+            if category_obj.name in encoder.classes_:
+                try:
+                    anomaly_score, anomaly_status = calculate_score(
+                        amount, category_obj.name, ts, model, scaler, encoder, norm_params,
+                        warning_threshold=warning_threshold,
+                        anomaly_threshold=anomaly_threshold,
+                    )
+                except Exception:
+                    pass
+
+        preview_rows.append({
+            "_row"          : row_num,
+            "timestamp"     : ts.isoformat(),
+            "amount"        : amount,
+            "category_name" : category_obj.name if category_obj else raw_cat,
+            "category_id"   : category_id,
+            "note"          : note,
+            "anomaly_score" : anomaly_score,
+            "anomaly_status": anomaly_status,
+            "is_excluded"   : is_excluded,
+            "errors"        : errors,
+        })
+
+    return {"rows": preview_rows, "total": len(preview_rows)}
+
+
+@app.post("/transactions/bulk-save", status_code=201)
+def bulk_save(
+    req: BulkTransactionSave,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Save a batch of transactions (from the upload-preview confirmation)"""
+    categories = {c.id: c for c in db.query(Category).all()}
+
+    warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
+    anomaly_threshold = current_user.anomaly_threshold or THRESHOLD_ANOMALY
+
+    user_model_row = db.query(UserModel).filter(
+        UserModel.user_id == current_user.id,
+        UserModel.is_trained == True
+    ).first()
+    if user_model_row:
+        model, scaler, encoder, norm_params = load_user_model(user_model_row)
+    elif global_model:
+        model, scaler, encoder, norm_params = global_model, global_scaler, global_encoder, global_norm_params
+    else:
+        model = None
+
+    saved = []
+    for item in req.transactions:
+        category = categories.get(item.category_id)
+        if not category:
+            continue
+
+        ts          = datetime.fromisoformat(item.timestamp) if item.timestamp else datetime.now(timezone.utc)
+        is_excluded = category.is_excluded
+
+        anomaly_score  = None
+        anomaly_status = None
+        if not is_excluded and model and category.name in encoder.classes_:
+            try:
+                anomaly_score, anomaly_status = calculate_score(
+                    item.amount, category.name, ts, model, scaler, encoder, norm_params,
+                    warning_threshold=warning_threshold,
+                    anomaly_threshold=anomaly_threshold,
+                )
+            except Exception:
+                pass
+
+        tx = Transaction(
+            user_id        = current_user.id,
+            category_id    = item.category_id,
+            amount         = item.amount,
+            note           = item.note,
+            timestamp      = ts,
+            anomaly_score  = anomaly_score,
+            anomaly_status = anomaly_status,
+            is_excluded    = is_excluded,
+        )
+        db.add(tx)
+        saved.append(tx)
+
+    db.commit()
+    for tx in saved:
+        db.refresh(tx)
+
+    # Retrain if needed after bulk insert
+    if should_retrain(current_user.id, db):
+        retrain_user_model(current_user.id, db)
+
+    return {"saved": len(saved), "message": f"{len(saved)} transactions saved successfully."}
+
 
 # ============================================================
 # ENDPOINTS — COLD START & MODEL STATUS
