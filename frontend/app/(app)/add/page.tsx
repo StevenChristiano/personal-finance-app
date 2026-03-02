@@ -273,7 +273,7 @@ export default function AddTransactionPage() {
                                             className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-[#F3F4F6] hover:bg-[#1A1A1A] hover:text-white text-[#6B7280] transition-all text-[10px] font-bold uppercase tracking-wide"
                                         >
                                             <Info size={11} />
-                                            Category Guide
+                                            
                                         </button>
                                     </div>
                                 </div>
@@ -623,65 +623,93 @@ export default function AddTransactionPage() {
             {/* ── Category Guide Modal ── */}
             {showCategoryInfo && (
                 <div
-                    className="fixed inset-0 z-50 flex items-center justify-center p-4"
-                    style={{ background: "rgba(0,0,0,0.45)" }}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 backdrop-blur-sm"
+                    style={{ background: "rgba(10, 10, 10, 0.6)" }}
                     onClick={(e) => { if (e.target === e.currentTarget) setShowCategoryInfo(false); }}
                 >
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+                    <div className="bg-[#F9FAFB] rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border border-[#EBEBEB] animate-in fade-in zoom-in-95 duration-200">
                         {/* Modal Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F3F4F6] shrink-0">
-                            <div className="flex items-center gap-2.5">
-                                <div className="p-1.5 rounded-lg bg-[#F3F4F6]">
-                                    <Info size={15} className="text-[#374151]" />
-                                </div>
-                                <div>
-                                    <h2 className="text-[15px] font-bold text-[#1A1A1A]">Category Guide</h2>
-                                    <p className="text-[11px] text-[#9CA3AF] mt-0.5">What each category covers &amp; whether it&apos;s scanned for anomalies</p>
-                                </div>
+                        <div className="flex items-center justify-between px-8 py-6 bg-white border-b border-[#EBEBEB] shrink-0">
+                            <div>
+                                <h2 className="text-xl font-black text-[#1A1A1A] tracking-tight">Category Guide</h2>
+                                <p className="text-sm text-[#6B7280] mt-1 font-medium">What each category covers & whether it's scanned for anomalies</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setShowCategoryInfo(false)}
-                                className="p-1.5 rounded-lg text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F3F4F6] transition-all"
+                                className="p-2.5 rounded-full bg-[#F3F4F6] text-[#6B7280] hover:text-[#1A1A1A] hover:bg-[#E5E7EB] hover:rotate-90 transition-all duration-300"
                             >
-                                <X size={16} />
+                                <X size={20} />
                             </button>
                         </div>
 
-                        {/* Category list */}
-                        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-1">
-                            {/* Monitored */}
-                            <p className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest mb-2">Monitored for anomalies</p>
-                            {Object.entries(CATEGORY_DESCRIPTIONS)
-                                .filter(([, desc]) => !desc.includes("Not monitored"))
-                                .map(([cat, desc]) => (
-                                    <div key={cat} className="flex items-start gap-3 p-3 rounded-xl hover:bg-[#F9FAFB] transition-colors group">
-                                        <span className="text-2xl shrink-0 mt-0.5 group-hover:scale-110 transition-transform">{CATEGORY_ICONS[cat] || "💳"}</span>
-                                        <div>
-                                            <p className="text-[13px] font-bold text-[#1A1A1A] leading-none">{cat}</p>
-                                            <p className="text-[12px] text-[#6B7280] mt-1 leading-relaxed">{desc}</p>
-                                        </div>
-                                    </div>
-                                ))}
-
-                            {/* Divider */}
-                            <div className="pt-3 pb-1">
-                                <p className="text-[10px] font-bold text-[#9CA3AF] uppercase tracking-widest">Not monitored <span className="font-normal normal-case">(occasional / irregular expenses)</span></p>
-                            </div>
-                            {Object.entries(CATEGORY_DESCRIPTIONS)
-                                .filter(([, desc]) => desc.includes("Not monitored"))
-                                .map(([cat, desc]) => (
-                                    <div key={cat} className="flex items-start gap-3 p-3 rounded-xl hover:bg-[#F9FAFB] transition-colors group">
-                                        <span className="text-2xl shrink-0 mt-0.5 group-hover:scale-110 transition-transform">{CATEGORY_ICONS[cat] || "💳"}</span>
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-[13px] font-bold text-[#1A1A1A] leading-none">{cat}</p>
-                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#F3F4F6] text-[#9CA3AF] uppercase tracking-wide">no scan</span>
+                        {/* Modal Body */}
+                        <div className="overflow-y-auto flex-1 px-8 py-6 space-y-8 custom-scrollbar">
+                            
+                            {/* Section: AI Monitored */}
+                            <section>
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#E5E7EB] to-transparent" />
+                                    <span className="text-xs font-black text-[#1A1A1A] uppercase tracking-widest bg-white px-3 py-1 rounded-full border border-[#EBEBEB] shadow-sm flex items-center gap-1.5">
+                                        <div className="w-2 h-2 rounded-full bg-[#16A34A] animate-pulse" />
+                                        Actively Monitored
+                                    </span>
+                                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#E5E7EB] to-transparent" />
+                                </div>
+                                
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {Object.entries(CATEGORY_DESCRIPTIONS)
+                                        .filter(([, desc]) => !desc.includes("(Not monitored"))
+                                        .map(([cat, desc]) => (
+                                            <div key={cat} className="group bg-white p-4 rounded-2xl border border-[#EBEBEB] hover:border-[#1A1A1A] hover:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-300 cursor-default">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <span className="text-3xl group-hover:scale-125 group-hover:rotate-6 transition-transform duration-300 origin-bottom-left">
+                                                        {CATEGORY_ICONS[cat] || "💳"}
+                                                    </span>
+                                                    <h3 className="text-sm font-black text-[#1A1A1A]">{cat}</h3>
+                                                </div>
+                                                <p className="text-[13px] text-[#6B7280] leading-relaxed font-medium">
+                                                    {desc}
+                                                </p>
                                             </div>
-                                            <p className="text-[12px] text-[#6B7280] mt-1 leading-relaxed">{desc.replace(/ \(Not monitored[^)]*\)/, "")}</p>
-                                        </div>
-                                    </div>
-                                ))}
+                                        ))}
+                                </div>
+                            </section>
+
+                            {/* Section: AI Ignored */}
+                            <section>
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#E5E7EB] to-transparent" />
+                                    <span className="text-xs font-black text-[#6B7280] uppercase tracking-widest bg-[#F3F4F6] px-3 py-1 rounded-full border border-[#EBEBEB] flex items-center gap-1.5">
+                                        <AlertCircle size={12} />
+                                        AI Blindspots
+                                    </span>
+                                    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#E5E7EB] to-transparent" />
+                                </div>
+
+                                <div className="flex flex-col gap-3">
+                                    {Object.entries(CATEGORY_DESCRIPTIONS)
+                                        .filter(([, desc]) => desc.includes("(Not monitored"))
+                                        .map(([cat, desc]) => {
+                                            const cleanDesc = desc.replace(/ \(Not monitored[^)]*\)/, ""); 
+                                            return (
+                                                <div key={cat} className="group flex items-start sm:items-center gap-4 bg-white p-4 rounded-2xl border border-dashed border-[#D1D5DB] hover:border-[#9CA3AF] hover:bg-[#F9FAFB] transition-colors cursor-default">
+                                                    <span className="text-3xl grayscale group-hover:grayscale-0 transition-all duration-300">{CATEGORY_ICONS[cat] || "💳"}</span>
+                                                    <div className="flex-1">
+                                                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                                                            <h3 className="text-sm font-black text-[#1A1A1A]">{cat}</h3>
+                                                            <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-[#1A1A1A] text-white uppercase tracking-widest">NO SCAN</span>
+                                                        </div>
+                                                        <p className="text-[12px] text-[#6B7280] leading-relaxed font-medium">
+                                                            {cleanDesc}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            </section>
+                            
                         </div>
                     </div>
                 </div>
