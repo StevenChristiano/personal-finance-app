@@ -264,6 +264,11 @@ export const modelApi = {
     const res = await api.get("/cold-start-status");
     return res.data;
   },
+  
+  retrain: async () => {
+    const res = await api.post("/retrain");
+    return res.data;
+  },
 
   modelStatus: async () => {
     const res = await api.get("/model-status");

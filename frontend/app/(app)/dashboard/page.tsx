@@ -7,7 +7,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { statsApi, transactionApi, modelApi, type Stats, type Transaction, type ColdStartStatus } from "@/lib/api";
-import { AlertTriangle, TrendingUp, Wallet, Plus, Bell } from "lucide-react";
+import { AlertTriangle, Plus, Bell, RefreshCw, Sparkles } from "lucide-react";
 
 const CATEGORY_COLORS: Record<string, string> = {
     Food: "#FF6B6B", Transport: "#4ECDC4", Lifestyle: "#45B7D1",
@@ -31,9 +31,32 @@ function formatRupiahShort(amount: number) {
     return `Rp ${amount}`;
 }
 
+function formatLastTrained(dateStr: string) {
+    const date = new Date(dateStr);
+    const now  = new Date();
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000 / 60); // minutes
+    if (diff < 1)   return "just now";
+    if (diff < 60)  return `${diff}m ago`;
+    if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
+    return `${Math.floor(diff / 1440)}d ago`;
+}
+
 interface MonthlyStats {
     month: number; year: number; label: string;
     total_amount: number; transaction_count: number; anomaly_count: number;
+}
+
+interface LowDataCategory {
+    category: string;
+    count: number;
+    min_required: number;
+}
+
+interface ModelStatus {
+    status: string;
+    message: string;
+    transaction_count?: number;
+    last_trained?: string;
 }
 
 export default function DashboardPage() {
@@ -41,13 +64,16 @@ export default function DashboardPage() {
     const [stats, setStats] = useState<Stats | null>(null);
     const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
     const [coldStart, setColdStart] = useState<ColdStartStatus | null>(null);
-    const [modelStatus, setModelStatus] = useState<{ status: string; message: string } | null>(null);
+    const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
     const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
     const [loading, setLoading] = useState(true);
+    const [retraining, setRetraining] = useState(false);
+    const [retrainSuccess, setRetrainSuccess] = useState(false);
+    const [lowDataCategories, setLowDataCategories] = useState<LowDataCategory[]>([]);
 
-    const now = new Date();
+    const now   = new Date();
     const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    const year  = now.getFullYear();
 
     useEffect(() => {
         const stored = localStorage.getItem("user");
@@ -75,6 +101,25 @@ export default function DashboardPage() {
         };
         fetchAll();
     }, []);
+
+    const handleRetrain = async () => {
+        setRetraining(true);
+        setRetrainSuccess(false);
+        setLowDataCategories([]);
+        try {
+            const retrainData = await modelApi.retrain() as { low_data_categories?: LowDataCategory[] };
+            // Refresh model status after retrain
+            const modelData = await modelApi.modelStatus();
+            setModelStatus(modelData);
+            setLowDataCategories(retrainData.low_data_categories || []);
+            setRetrainSuccess(true);
+            setTimeout(() => setRetrainSuccess(false), 4000);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setRetraining(false);
+        }
+    };
 
     const pieData = stats
         ? Object.entries(stats.by_category).map(([name, data]) => ({ name, value: data.total }))
@@ -127,14 +172,98 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* Model Status Badge */}
+            {/* Model Status + Retrain */}
             {modelStatus && (
-                <div className="mb-6">
-                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${modelStatus.status === "personal" ? "bg-[#D1FAE5] text-[#065F46]" : "bg-[#E0E7FF] text-[#3730A3]"
-                        }`}>
+                <div className="mb-6 flex items-center gap-3">
+                    {/* Status badge */}
+                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+                        modelStatus.status === "personal"
+                            ? "bg-[#D1FAE5] text-[#065F46]"
+                            : "bg-[#E0E7FF] text-[#3730A3]"
+                    }`}>
                         <span className="w-1.5 h-1.5 rounded-full bg-current" />
                         {modelStatus.status === "personal" ? "Personal Model Active" : "Global Model (Cold Start)"}
                     </span>
+
+                    {/* Last trained info */}
+                    {modelStatus.status === "personal" && modelStatus.last_trained && (
+                        <span className="text-xs text-[#9CA3AF]">
+                            Last trained {formatLastTrained(modelStatus.last_trained)} · {modelStatus.transaction_count} transactions
+                        </span>
+                    )}
+
+                    {/* Retrain button — only show when enough data */}
+                    {coldStart?.is_ready && (
+                        <button
+                            onClick={handleRetrain}
+                            disabled={retraining}
+                            className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                retrainSuccess
+                                    ? "bg-[#D1FAE5] text-[#065F46] border border-[#6EE7B7]"
+                                    : modelStatus.status === "personal"
+                                    ? "bg-white border border-[#EBEBEB] text-[#6B7280] hover:border-[#1A1A1A] hover:text-[#1A1A1A]"
+                                    : "bg-[#1A1A1A] text-white hover:bg-[#333]"
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                            {retrainSuccess ? (
+                                <>✓ Model Updated</>
+                            ) : retraining ? (
+                                <>
+                                    <RefreshCw size={12} className="animate-spin" />
+                                    Training...
+                                </>
+                            ) : modelStatus.status === "personal" ? (
+                                <>
+                                    <RefreshCw size={12} />
+                                    Retrain Model
+                                </>
+                            ) : (
+                                <>
+                                    <Sparkles size={12} />
+                                    Personalize Now
+                                </>
+                            )}
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Low Data Categories Warning */}
+            {lowDataCategories.length > 0 && (
+                <div className="mb-6 p-4 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A]">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle size={16} className="text-[#D97706] mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                            <p className="text-sm font-medium text-[#92400E]">
+                                Some categories need more data for accurate detection
+                            </p>
+                            <p className="text-xs text-[#B45309] mt-0.5 mb-3">
+                                Transactions in these categories may result in false alarms until enough data is collected.
+                            </p>
+                            <div className="space-y-2">
+                                {lowDataCategories.map((cat) => (
+                                    <div key={cat.category} className="flex items-center gap-3">
+                                        <span className="text-xs text-[#92400E] w-32 font-medium">{cat.category}</span>
+                                        <div className="flex-1 h-1.5 bg-[#FDE68A] rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-[#F59E0B] rounded-full transition-all"
+                                                style={{ width: `${Math.min((cat.count / cat.min_required) * 100, 100)}%` }}
+                                            />
+                                        </div>
+                                        <span className="text-xs text-[#B45309] w-16 text-right">
+                                            {cat.count}/{cat.min_required}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setLowDataCategories([])}
+                            className="text-[#D97706] hover:text-[#92400E] text-xs shrink-0"
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -193,8 +322,9 @@ export default function DashboardPage() {
                         {anomalyTransactions.length > 0 ? (
                             <div className="space-y-2">
                                 {anomalyTransactions.map((t) => (
-                                    <div key={t.id} className={`flex items-center justify-between p-3 rounded-xl ${t.anomaly_status === "anomaly" ? "bg-[#FEF2F2]" : "bg-[#FFFBEB]"
-                                        }`}>
+                                    <div key={t.id} className={`flex items-center justify-between p-3 rounded-xl ${
+                                        t.anomaly_status === "anomaly" ? "bg-[#FEF2F2]" : "bg-[#FFFBEB]"
+                                    }`}>
                                         <div className="flex items-center gap-2">
                                             <span className="text-base">{CATEGORY_ICONS[t.category_name] || "💳"}</span>
                                             <div>
@@ -202,8 +332,9 @@ export default function DashboardPage() {
                                                 <p className="text-xs text-[#6B7280]">{formatRupiah(t.amount)}</p>
                                             </div>
                                         </div>
-                                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${t.anomaly_status === "anomaly" ? "bg-[#DC2626] text-white" : "bg-[#F59E0B] text-white"
-                                            }`}>
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                            t.anomaly_status === "anomaly" ? "bg-[#DC2626] text-white" : "bg-[#F59E0B] text-white"
+                                        }`}>
                                             {t.anomaly_status}
                                         </span>
                                     </div>

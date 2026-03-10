@@ -22,6 +22,7 @@ from dateutil.relativedelta import relativedelta
 
 from database import get_db, User, Transaction, Category, UserModel, init_db
 from auth import hash_password, verify_password, create_access_token, get_current_user
+
 # ============================================================
 # STARTUP
 # ============================================================
@@ -29,8 +30,7 @@ from auth import hash_password, verify_password, create_access_token, get_curren
 async def lifespan(app: FastAPI):
     init_db()  # startup
     yield
-    # (opsional) shutdown logic di sini
-    
+
 # ============================================================
 # INISIALISASI APP
 # ============================================================
@@ -44,7 +44,7 @@ app = FastAPI(
 # CORS — izinkan Next.js frontend mengakses API ini
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # URL Next.js development
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,11 +55,9 @@ app.add_middleware(
 # ============================================================
 MODEL_DIR  = "model"
 
-# Threshold untuk production (sesuai paper)
 THRESHOLD_ANOMALY = 0.60
 THRESHOLD_WARNING = 0.50
 
-# Cold start threshold (sesuai paper)
 MIN_CATEGORY = 20
 MIN_GLOBAL   = 50
 
@@ -67,13 +65,11 @@ N_ESTIMATORS      = 100
 MAX_SAMPLES       = 256
 RANDOM_SEED       = 42
 
-# Kategori yang masuk anomaly detection
 ANOMALY_CATEGORIES = [
     "Food", "Transport", "Lifestyle",
     "Entertainment", "Utilities", "Telecommunication", "Subscription"
 ]
 
-# Kategori yang excluded dari anomaly detection
 EXCLUDED_CATEGORIES = ["Health", "Education", "Big Expense"]
 
 # ============================================================
@@ -98,7 +94,7 @@ def load_global_model():
 global_model, global_scaler, global_encoder, global_norm_params = load_global_model()
 
 # ============================================================
-# SCHEMAS (struktur request & response)
+# SCHEMAS/MODEL
 # ============================================================
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -175,11 +171,31 @@ def calculate_score(amount, category_name, timestamp, model, scaler, encoder, no
 # ============================================================
 # HELPER: Retrain model user
 # ============================================================
-def retrain_user_model(user_id: int, db: Session):
-    transactions = db.query(Transaction).filter(
+def retrain_user_model(user_id: int, db: Session, manual: bool = False):
+    """
+    Retrain model for a specific user.
+
+    - manual=False (auto): pakai semua transaksi (first retrain atau scheduled).
+    - manual=True (user-triggered): 
+        - Jika sudah pernah ditraining sebelumnya → filter hanya non-anomaly
+          (normal + warning) supaya model tidak belajar dari pola buruk.
+        - Jika belum pernah → tetap pakai semua data karena status anomaly
+          masih dari global model, belum tentu representatif.
+    """
+    user_model_row = db.query(UserModel).filter(UserModel.user_id == user_id).first()
+    is_first_train = not user_model_row or not user_model_row.is_trained
+
+    # Tentukan filter transaksi
+    query = db.query(Transaction).filter(
         Transaction.user_id == user_id,
-        Transaction.is_excluded == False
-    ).all()
+        Transaction.is_excluded == False,
+    )
+
+    # if manual and not is_first_train:
+    #     # Retrain manual setelah model personal sudah ada → buang anomaly
+    #     query = query.filter(Transaction.anomaly_status != "anomaly")
+
+    transactions = query.all()
 
     if len(transactions) < MIN_GLOBAL:
         return False
@@ -189,7 +205,8 @@ def retrain_user_model(user_id: int, db: Session):
         "amount"     : t.amount,
         "category"   : categories[t.category_id],
         "hour"       : t.timestamp.hour,
-        "day_of_week": t.timestamp.weekday()
+        "day_of_week": t.timestamp.weekday(),
+        "status"     : t.anomaly_status,
     } for t in transactions]
 
     df                     = pd.DataFrame(data)
@@ -199,35 +216,99 @@ def retrain_user_model(user_id: int, db: Session):
     df["category_encoded"] = encoder.fit_transform(df["category"])
     X                      = df[["amount_scaled", "category_encoded", "hour", "day_of_week"]].values
 
+    # Hitung contamination dinamis dari proporsi anomali user.
+    # Hanya untuk manual retrain setelah personal model sudah ada
+    # status anomaly di titik ini sudah dari personal model, bukan global,
+    # sehingga lebih representatif sebagai estimasi kontaminasi nyata.
+    if manual and not is_first_train:
+        n_anomaly     = (df["status"] == "anomaly").sum()
+        raw_contam    = n_anomaly / len(df)
+        contamination = float(np.clip(raw_contam, 0.01, 0.5))
+        print(f"   📊 Dynamic contamination: {contamination:.3f} ({n_anomaly}/{len(df)} anomalies in training data)")
+    else:
+        # Auto-retrain atau first train → pakai default 10%
+        # Status anomaly masih dari global model, belum reliable
+        contamination = 0.1
+        print(f"   📊 Default contamination: {contamination} (auto/first train)")
+
     model = IsolationForest(
         n_estimators=N_ESTIMATORS,
         max_samples=min(MAX_SAMPLES, len(X)),
-        contamination=0.1,
+        contamination=contamination,
         random_state=RANDOM_SEED
     )
     model.fit(X)
 
     raw_scores  = -model.score_samples(X)
-    norm_params = {"min_score": float(raw_scores.min()), "max_score": float(raw_scores.max())}
+    norm_params = {
+        "min_score"    : float(raw_scores.min()),
+        "max_score"    : float(raw_scores.max()),
+        "contamination": contamination,
+    }
 
-    user_model = db.query(UserModel).filter(UserModel.user_id == user_id).first()
-    if not user_model:
-        user_model = UserModel(user_id=user_id)
-        db.add(user_model)
+    if not user_model_row:
+        user_model_row = UserModel(user_id=user_id)
+        db.add(user_model_row)
 
-    user_model.model_blob        = pickle.dumps(model)
-    user_model.scaler_blob       = pickle.dumps(scaler)
-    user_model.encoder_blob      = pickle.dumps(encoder)
-    user_model.norm_params_blob  = pickle.dumps(norm_params)
-    user_model.transaction_count = len(transactions)
-    user_model.is_trained        = True
-    user_model.last_trained      = datetime.now(timezone.utc)
+    user_model_row.model_blob        = pickle.dumps(model)
+    user_model_row.scaler_blob       = pickle.dumps(scaler)
+    user_model_row.encoder_blob      = pickle.dumps(encoder)
+    user_model_row.norm_params_blob  = pickle.dumps(norm_params)
+    user_model_row.transaction_count = len(transactions)
+    user_model_row.is_trained        = True
+    user_model_row.last_trained      = datetime.now(timezone.utc)
     db.commit()
-    print(f"✅ Model retrained for user {user_id} ({len(transactions)} transactions)")
+
+    mode_label = "manual" if manual else "auto"
+    print(f"✅ Model retrained [{mode_label}] for user {user_id} ({len(transactions)} transactions, contamination={contamination:.3f})")
+    
+    # Rescore semua transaksi lama dengan model baru
+    rescore_all_transactions(user_id, db, model, scaler, encoder, norm_params)
     return True
 
 # ============================================================
-# HELPER: Cek apakah perlu retrain
+# HELPER: Rescore semua transaksi user dengan model terbaru
+# ============================================================
+def rescore_all_transactions(user_id: int, db: Session, model, scaler, encoder, norm_params):
+    """
+    Hitung ulang anomaly_score dan anomaly_status semua transaksi user
+    menggunakan model yang baru saja ditraining.
+    Dipanggil otomatis setelah setiap retrain.
+    """
+    user_obj  = db.query(User).filter(User.id == user_id).first()
+    warning_t = user_obj.warning_threshold or THRESHOLD_WARNING
+    anomaly_t = user_obj.anomaly_threshold or THRESHOLD_ANOMALY
+
+    transactions = db.query(Transaction).filter(
+        Transaction.user_id == user_id,
+        Transaction.is_excluded == False,
+    ).all()
+
+    categories = {c.id: c.name for c in db.query(Category).all()}
+
+    rescored = 0
+    for t in transactions:
+        cat_name = categories.get(t.category_id)
+        if not cat_name or cat_name not in encoder.classes_:
+            continue
+        try:
+            score, status = calculate_score(
+                t.amount, cat_name, t.timestamp,
+                model, scaler, encoder, norm_params,
+                warning_threshold=warning_t,
+                anomaly_threshold=anomaly_t,
+            )
+            t.anomaly_score  = score
+            t.anomaly_status = status
+            rescored += 1
+        except Exception:
+            continue
+
+    db.commit()
+    print(f"   🔄 Rescored {rescored}/{len(transactions)} transactions with new model")
+
+# ============================================================
+# HELPER: Cek apakah perlu auto-retrain
 # ============================================================
 def should_retrain(user_id: int, db: Session) -> bool:
     user_model   = db.query(UserModel).filter(UserModel.user_id == user_id).first()
@@ -241,7 +322,6 @@ def should_retrain(user_id: int, db: Session) -> bool:
         return total >= MIN_GLOBAL
 
     return (total - user_model.transaction_count) >= MIN_GLOBAL
-
 
 
 # ============================================================
@@ -325,7 +405,6 @@ def create_transaction(
     anomaly_status = None
     is_excluded    = category.is_excluded
 
-    # Use user's personal thresholds stored in DB
     warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
     anomaly_threshold = current_user.anomaly_threshold or THRESHOLD_ANOMALY
 
@@ -363,8 +442,9 @@ def create_transaction(
     db.commit()
     db.refresh(transaction)
 
+    # Auto-retrain (pakai semua data)
     if should_retrain(current_user.id, db):
-        retrain_user_model(current_user.id, db)
+        retrain_user_model(current_user.id, db, manual=False)
 
     return {
         "id"            : transaction.id,
@@ -398,13 +478,13 @@ def get_transactions(
         )
     transactions = query.order_by(Transaction.timestamp.desc()).all()
     categories   = {cat.id: cat.name for cat in db.query(Category).all()}
-    
+
     def dynamic_status(score):
         if score is None: return None
         if score >= anomaly_threshold: return "anomaly"
         if score >= warning_threshold: return "warning"
         return "normal"
-    
+
     return [{
         "id"            : t.id,
         "amount"        : t.amount,
@@ -457,15 +537,15 @@ def get_stats(
     if not transactions:
         return {"total_transactions": 0, "total_amount": 0, "average_amount": 0,
                 "by_category": {}, "anomaly_count": 0}
-    
+
     def dynamic_status(score):
         if score is None: return None
         if score >= anomaly_threshold: return "anomaly"
         if score >= warning_threshold: return "warning"
         return "normal"
-    
+
     total_amount  = sum(t.amount for t in transactions)
-    anomaly_count = sum(1 for t in transactions 
+    anomaly_count = sum(1 for t in transactions
                         if not t.is_excluded and dynamic_status(t.anomaly_score) == "anomaly")
     by_category   = {}
     for t in transactions:
@@ -493,31 +573,29 @@ def get_monthly_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Return spending stats for the last N months"""
-    
     result = []
     now = datetime.now(timezone.utc)
-    
+
     for i in range(months - 1, -1, -1):
         target = now - relativedelta(months=i)
         m, y = target.month, target.year
         last_day = calendar.monthrange(y, m)[1]
-        
+
         txs = db.query(Transaction).filter(
             Transaction.user_id == current_user.id,
             Transaction.timestamp >= datetime(y, m, 1),
             Transaction.timestamp <= datetime(y, m, last_day, 23, 59, 59)
         ).all()
-        
+
         def dynamic_status(score):
             if score is None: return None
             if score >= anomaly_threshold: return "anomaly"
             if score >= warning_threshold: return "warning"
             return "normal"
-        
+
         total = sum(t.amount for t in txs)
         anomaly_count = sum(1 for t in txs if not t.is_excluded and dynamic_status(t.anomaly_score) == "anomaly")
-        
+
         result.append({
             "month": m,
             "year": y,
@@ -526,25 +604,22 @@ def get_monthly_stats(
             "transaction_count": len(txs),
             "anomaly_count": anomaly_count,
         })
-    
+
     return result
 
 # ============================================================
 # ENDPOINTS — EXCEL TEMPLATE & BULK UPLOAD
 # ============================================================
-
 @app.get("/transactions/template")
 def download_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Generate and return a filled Excel template for bulk transaction upload"""
     categories = db.query(Category).all()
     cat_names  = [c.name for c in categories]
 
     wb = openpyxl.Workbook()
 
-    # ── Sheet 1: Transactions ──────────────────────────────
     ws = wb.active
     ws.title = "Transactions"
 
@@ -562,38 +637,34 @@ def download_template(
     col_widths = [22, 18, 22, 30]
     for col_idx, (header, width) in enumerate(zip(headers, col_widths), start=1):
         cell = ws.cell(row=1, column=col_idx, value=header)
-        cell.font   = header_font
-        cell.fill   = header_fill
+        cell.font      = header_font
+        cell.fill      = header_fill
         cell.alignment = header_align
-        cell.border = thin_border
+        cell.border    = thin_border
         ws.column_dimensions[get_column_letter(col_idx)].width = width
     ws.row_dimensions[1].height = 22
 
-    # Example rows
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     examples = [
-        [now_str, 50000, "Food",     "Lunch with team"],
-        [now_str, 25000, "Transport", "Gojek to office"],
+        [now_str, 50000,  "Food",          "Lunch with team"],
+        [now_str, 25000,  "Transport",     "Gojek to office"],
         [now_str, 150000, "Entertainment", "Cinema ticket"],
     ]
     example_fill = PatternFill("solid", fgColor="F9FAFB")
     for row_idx, row_data in enumerate(examples, start=2):
         for col_idx, value in enumerate(row_data, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
-            cell.fill   = example_fill
-            cell.border = thin_border
+            cell.fill      = example_fill
+            cell.border    = thin_border
             cell.alignment = Alignment(vertical="center")
 
-    # Dropdown validation for category column (col 3)
     cat_list = ",".join(cat_names)
     dv = DataValidation(type="list", formula1=f'"{cat_list}"', allow_blank=True)
     dv.sqref = "C2:C10000"
     ws.add_data_validation(dv)
 
-    # Freeze header row
     ws.freeze_panes = "A2"
 
-    # ── Sheet 2: Category Reference ───────────────────────
     ws2 = wb.create_sheet("Category Reference")
     ws2.column_dimensions["A"].width = 25
     ws2.column_dimensions["B"].width = 18
@@ -603,10 +674,10 @@ def download_template(
     ref_fill    = PatternFill("solid", fgColor="1A1A1A")
     for ci, hdr in enumerate(ref_headers, start=1):
         cell = ws2.cell(row=1, column=ci, value=hdr)
-        cell.font  = Font(color="FFFFFF", bold=True)
-        cell.fill  = ref_fill
+        cell.font      = Font(color="FFFFFF", bold=True)
+        cell.fill      = ref_fill
         cell.alignment = Alignment(horizontal="center", vertical="center")
-        cell.border = thin_border
+        cell.border    = thin_border
     ws2.row_dimensions[1].height = 22
 
     descriptions = {
@@ -624,8 +695,8 @@ def download_template(
     for ri, cat in enumerate(categories, start=2):
         ws2.cell(row=ri, column=1, value=cat.name).border = thin_border
         scan_cell = ws2.cell(row=ri, column=2, value="No" if cat.is_excluded else "Yes")
-        scan_cell.border = thin_border
-        scan_cell.font = Font(color="DC2626" if cat.is_excluded else "16A34A", bold=True)
+        scan_cell.border    = thin_border
+        scan_cell.font      = Font(color="DC2626" if cat.is_excluded else "16A34A", bold=True)
         scan_cell.alignment = Alignment(horizontal="center")
         desc_cell = ws2.cell(row=ri, column=3, value=descriptions.get(cat.name, ""))
         desc_cell.border = thin_border
@@ -647,7 +718,6 @@ async def upload_preview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Parse uploaded Excel/CSV, run anomaly detection, return preview (nothing saved yet)"""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded.")
 
@@ -666,7 +736,6 @@ async def upload_preview(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
-    # Normalise column names
     df.columns = [str(c).strip().lower() for c in df.columns]
 
     required_cols = {"date", "amount", "category"}
@@ -677,18 +746,15 @@ async def upload_preview(
             detail=f"Missing required columns: {', '.join(missing)}. Expected: date, amount, category, note"
         )
 
-    # Drop completely empty rows
     df = df.dropna(subset=["date", "amount", "category"], how="all").reset_index(drop=True)
     if df.empty:
         raise HTTPException(status_code=400, detail="The file contains no valid data rows.")
 
-    categories   = {c.name.lower(): c for c in db.query(Category).all()}
-    cat_id_map   = {c.name.lower(): c.id for c in db.query(Category).all()}
+    categories = {c.name.lower(): c for c in db.query(Category).all()}
 
     warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
     anomaly_threshold = current_user.anomaly_threshold or THRESHOLD_ANOMALY
 
-    # Load model
     user_model_row = db.query(UserModel).filter(
         UserModel.user_id == current_user.id,
         UserModel.is_trained == True
@@ -702,10 +768,9 @@ async def upload_preview(
 
     preview_rows = []
     for idx, row in df.iterrows():
-        row_num = int(idx) + 2  # Excel row (1 = header)
+        row_num = int(idx) + 2
         errors  = []
 
-        # Parse amount
         try:
             amount = float(row["amount"])
             if amount <= 0:
@@ -714,8 +779,7 @@ async def upload_preview(
             amount = 0
             errors.append("Invalid amount")
 
-        # Parse category
-        raw_cat = str(row["category"]).strip() if pd.notna(row.get("category")) else ""
+        raw_cat   = str(row["category"]).strip() if pd.notna(row.get("category")) else ""
         cat_lower = raw_cat.lower()
         if cat_lower not in categories:
             errors.append(f"Unknown category: '{raw_cat}'")
@@ -725,27 +789,21 @@ async def upload_preview(
             category_obj = categories[cat_lower]
             category_id  = category_obj.id
 
-        # Parse timestamp
         raw_date = row.get("date", "")
         try:
             if pd.isna(raw_date):
-                ts = datetime.now()            # naive local time fallback
+                ts = datetime.now()
             else:
                 ts = pd.to_datetime(raw_date)
-                # Keep naive — user entered local time; don't attach UTC so
-                # the ISO string has no offset and the browser renders it as-is
                 if ts.tzinfo is not None:
-                    # If tz-aware, convert to naive local equivalent
                     ts = ts.replace(tzinfo=None)
-                ts = ts.to_pydatetime()        # convert Pandas Timestamp → Python datetime
+                ts = ts.to_pydatetime()
         except Exception:
-            ts = datetime.now()                # naive local time fallback
+            ts = datetime.now()
             errors.append("Invalid date format — defaulting to now")
 
-        # Parse note
         note = str(row["note"]).strip() if "note" in df.columns and pd.notna(row.get("note")) else None
 
-        # Anomaly detection
         anomaly_score  = None
         anomaly_status = None
         is_excluded    = category_obj.is_excluded if category_obj else False
@@ -783,7 +841,6 @@ def bulk_save(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Save a batch of transactions (from the upload-preview confirmation)"""
     categories = {c.id: c for c in db.query(Category).all()}
 
     warning_threshold = current_user.warning_threshold or THRESHOLD_WARNING
@@ -838,11 +895,70 @@ def bulk_save(
     for tx in saved:
         db.refresh(tx)
 
-    # Retrain if needed after bulk insert
+    # Auto-retrain (pakai semua data)
     if should_retrain(current_user.id, db):
-        retrain_user_model(current_user.id, db)
+        retrain_user_model(current_user.id, db, manual=False)
 
     return {"saved": len(saved), "message": f"{len(saved)} transactions saved successfully."}
+
+
+# ============================================================
+# ENDPOINTS — RETRAIN (MANUAL)
+# ============================================================
+@app.post("/retrain")
+def manual_retrain(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    User-triggered retrain. Requires at least MIN_GLOBAL non-excluded transactions.
+    Filters out anomaly transactions if user already has a personal model,
+    so the model only learns from normal + warning patterns.
+    """
+    total = db.query(Transaction).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.is_excluded == False
+    ).count()
+
+    if total < MIN_GLOBAL:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Not enough data to train. Need at least {MIN_GLOBAL} transactions, currently have {total}."
+        )
+
+    success = retrain_user_model(current_user.id, db, manual=True)
+    if not success:
+        raise HTTPException(status_code=500, detail="Retrain failed. Please try again.")
+
+    user_model  = db.query(UserModel).filter(UserModel.user_id == current_user.id).first()
+    norm_params = pickle.loads(user_model.norm_params_blob)
+
+    # Hitung kategori yang datanya masih kurang
+    all_transactions = db.query(Transaction).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.is_excluded == False,
+    ).all()
+    categories_map  = {c.id: c.name for c in db.query(Category).filter(Category.is_excluded == False).all()}
+    cat_counts: dict = {}
+    for t in all_transactions:
+        cat_name = categories_map.get(t.category_id)
+        if cat_name:
+            cat_counts[cat_name] = cat_counts.get(cat_name, 0) + 1
+
+    low_data_categories = [
+        {"category": cat, "count": count, "min_required": MIN_CATEGORY}
+        for cat, count in cat_counts.items()
+        if count < MIN_CATEGORY
+    ]
+    low_data_categories.sort(key=lambda x: x["count"])
+
+    return {
+        "message"          : "Personal model successfully trained!",
+        "transaction_count": user_model.transaction_count,
+        "last_trained"     : user_model.last_trained,
+        "contamination"    : norm_params.get("contamination", 0.1),
+        "low_data_categories": low_data_categories,
+    }
 
 
 # ============================================================
@@ -883,11 +999,17 @@ def model_status(
 ):
     user_model = db.query(UserModel).filter(UserModel.user_id == current_user.id).first()
     if user_model and user_model.is_trained:
-        return {"status": "personal", "message": "Using your Personal Model",
-                "transaction_count": user_model.transaction_count, "last_trained": user_model.last_trained}
+        return {
+            "status"            : "personal",
+            "message"           : "Using your Personal Model",
+            "transaction_count" : user_model.transaction_count,
+            "last_trained"      : user_model.last_trained,
+        }
     elif global_model:
         return {"status": "global", "message": "Using global model (cold start)"}
     return {"status": "not_loaded", "message": "Model not yet available."}
+
+
 # ============================================================
 # RUN SERVER
 # ============================================================
