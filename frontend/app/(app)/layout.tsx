@@ -8,8 +8,8 @@ import { Wallet, TrendingUp, List, Plus, Settings, LogOut, DollarSign } from "lu
 const NAV_ITEMS = [
     { href: "/dashboard", Icon: TrendingUp, label: "Dashboard" },
     { href: "/transactions", Icon: List, label: "Transactions" },
-    { href: "/income", Icon: DollarSign, label: "Income" },
     { href: "/add", Icon: Plus, label: "Add Transaction" },
+    { href: "/income", Icon: DollarSign, label: "Income" },
     { href: "/settings", Icon: Settings, label: "Settings" },
 ];
 

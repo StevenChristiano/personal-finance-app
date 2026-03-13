@@ -264,6 +264,25 @@ export const incomeApi = {
         await api.delete(`/income/${id}`);
     },
  
+    toggleRecurring: async (id: number): Promise<{ id: number; source: string; is_recurring: boolean }> => {
+        const res = await api.patch(`/income/${id}/toggle-recurring`);
+        return res.data;
+    },
+ 
+    getSources: async (): Promise<{ sources: string[] }> => {
+        const res = await api.get("/income/sources");
+        return res.data;
+    },
+ 
+    getSummary: async (): Promise<{
+        total_all_time   : number;
+        yearly           : { year: number; total: number }[];
+        recurring_sources: { source: string; amount: number }[];
+    }> => {
+        const res = await api.get("/income/summary");
+        return res.data;
+    },
+ 
     getBalance: async (month?: number, year?: number): Promise<Balance> => {
         const params = month && year ? `?month=${month}&year=${year}` : "";
         const res = await api.get(`/balance${params}`);
