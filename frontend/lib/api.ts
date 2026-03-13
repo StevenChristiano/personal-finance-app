@@ -107,6 +107,25 @@ export interface BulkTransactionItem {
   timestamp?: string;
 }
 
+export type Income = {
+    id          : number;
+    amount      : number;
+    source      : string;
+    date        : string;
+    is_recurring: boolean;
+};
+ 
+export type Balance = {
+    total_balance  : number;
+    monthly_balance: number;
+    total_income   : number;
+    total_expense  : number;
+    monthly_income : number;
+    monthly_expense: number;
+    month          : number;
+    year           : number;
+};
+ 
 // ============================================================
 // AUTH
 // ============================================================
@@ -218,6 +237,38 @@ export const transactionApi = {
     const res = await api.post("/transactions/bulk-save", { transactions });
     return res.data as { saved: number; message: string };
   },
+};
+
+// ============================================================
+// INCOME
+// ============================================================
+
+export const incomeApi = {
+    getAll: async (month?: number, year?: number): Promise<Income[]> => {
+        const params = month && year ? `?month=${month}&year=${year}` : "";
+        const res = await api.get(`/income${params}`);
+        return res.data;
+    },
+ 
+    create: async (data: {
+        amount      : number;
+        source      : string;
+        date        : string;
+        is_recurring: boolean;
+    }): Promise<Income> => {
+        const res = await api.post("/income", data);
+        return res.data;
+    },
+ 
+    delete: async (id: number): Promise<void> => {
+        await api.delete(`/income/${id}`);
+    },
+ 
+    getBalance: async (month?: number, year?: number): Promise<Balance> => {
+        const params = month && year ? `?month=${month}&year=${year}` : "";
+        const res = await api.get(`/balance${params}`);
+        return res.data;
+    },
 };
 
 // ============================================================

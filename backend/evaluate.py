@@ -449,7 +449,7 @@ if __name__ == "__main__":
         help="User ID to evaluate (from database)"
     )
     parser.add_argument(
-        "--k", type=float, default=2.0,
+        "--k", type=float, default=1.0,
         help="Pseudo-label threshold multiplier: anomaly if amount > mean + k*std (default: 2.0)"
     )
     parser.add_argument(

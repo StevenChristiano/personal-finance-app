@@ -50,6 +50,7 @@ class User(Base):
     # Relasi ke transactions dan user_models
     transactions = relationship("Transaction", back_populates="user")
     model        = relationship("UserModel", back_populates="user", uselist=False)
+    incomes      = relationship("Income", back_populates="user")
 
 
 class Transaction(Base):
@@ -74,6 +75,21 @@ class Transaction(Base):
     user         = relationship("User", back_populates="transactions")
     category_ref = relationship("Category", back_populates="transactions")
 
+
+class Income(Base):
+    """Tabel incomes — menyimpan pemasukan user"""
+    __tablename__ = "incomes"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    user_id      = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    amount       = Column(Float, nullable=False)
+    source       = Column(String, nullable=False)          # label/nama pemasukan
+    date         = Column(DateTime, nullable=False)        # tanggal pemasukan
+    is_recurring = Column(Boolean, default=False)          # otomatis tiap bulan
+    created_at   = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="incomes")
+    
 
 class UserModel(Base):
     """Tabel user_models — menyimpan model Isolation Forest per user sebagai blob"""

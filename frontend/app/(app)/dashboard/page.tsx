@@ -6,8 +6,8 @@ import {
     PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
     BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
-import { statsApi, transactionApi, modelApi, type Stats, type Transaction, type ColdStartStatus } from "@/lib/api";
-import { AlertTriangle, Plus, Bell, RefreshCw, Sparkles } from "lucide-react";
+import { statsApi, transactionApi, modelApi, incomeApi, type Stats, type Transaction, type ColdStartStatus, type Balance } from "@/lib/api";
+import { AlertTriangle, TrendingUp, TrendingDown, Wallet, Plus, Bell, RefreshCw, Sparkles } from "lucide-react";
 
 const CATEGORY_COLORS: Record<string, string> = {
     Food: "#FF6B6B", Transport: "#4ECDC4", Lifestyle: "#45B7D1",
@@ -70,6 +70,7 @@ export default function DashboardPage() {
     const [retraining, setRetraining] = useState(false);
     const [retrainSuccess, setRetrainSuccess] = useState(false);
     const [lowDataCategories, setLowDataCategories] = useState<LowDataCategory[]>([]);
+    const [balance, setBalance] = useState<Balance | null>(null);
 
     const now   = new Date();
     const month = now.getMonth() + 1;
@@ -81,18 +82,20 @@ export default function DashboardPage() {
 
         const fetchAll = async () => {
             try {
-                const [statsData, txData, coldData, modelData, monthlyData] = await Promise.all([
+                const [statsData, txData, coldData, modelData, monthlyData, balanceData] = await Promise.all([
                     statsApi.get(month, year),
                     transactionApi.getAll(month, year),
                     modelApi.coldStartStatus(),
                     modelApi.modelStatus(),
                     statsApi.getMonthly(6),
+                    incomeApi.getBalance(month, year),
                 ]);
                 setStats(statsData);
                 setRecentTransactions(txData.slice(0, 5));
                 setColdStart(coldData);
                 setModelStatus(modelData);
                 setMonthlyStats(monthlyData);
+                setBalance(balanceData);
             } catch (e) {
                 console.error(e);
             } finally {
@@ -108,8 +111,7 @@ export default function DashboardPage() {
         setLowDataCategories([]);
         try {
             const retrainData = await modelApi.retrain() as { low_data_categories?: LowDataCategory[] };
-            // Refresh model status after retrain
-            const modelData = await modelApi.modelStatus();
+            const modelData   = await modelApi.modelStatus();
             setModelStatus(modelData);
             setLowDataCategories(retrainData.low_data_categories || []);
             setRetrainSuccess(true);
@@ -268,22 +270,57 @@ export default function DashboardPage() {
             )}
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-                {[
-                    { label: "Total Spent", value: formatRupiah(stats?.total_amount || 0), sub: `${stats?.total_transactions || 0} transactions` },
-                    { label: "Average/Transaction", value: formatRupiah(stats?.average_amount || 0), sub: "This month" },
-                    {
-                        label: "Anomalies Detected", value: stats?.anomaly_count || 0, sub: "This month",
-                        color: stats?.anomaly_count ? "bg-[#FEF2F2]" : "bg-white",
-                        textColor: stats?.anomaly_count ? "text-[#DC2626]" : "text-[#1A1A1A]",
-                    },
-                ].map((card, i) => (
-                    <div key={i} className={`${card.color || "bg-white"} rounded-2xl p-5 border border-[#EBEBEB]`}>
-                        <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">{card.label}</p>
-                        <p className={`text-2xl font-bold mt-1 ${card.textColor || "text-[#1A1A1A]"}`}>{card.value}</p>
-                        <p className="text-xs text-[#9CA3AF] mt-0.5">{card.sub}</p>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+                {/* Monthly Balance */}
+                <div className={"rounded-2xl p-5 border " + (
+                    (balance?.monthly_balance ?? 0) >= 0 ? "bg-[#F0FDF4] border-[#BBF7D0]" : "bg-[#FEF2F2] border-[#FECACA]"
+                )}>
+                    <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Monthly Balance</p>
+                        <Wallet size={14} className={(balance?.monthly_balance ?? 0) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"} />
                     </div>
-                ))}
+                    <p className={"text-2xl font-bold " + ((balance?.monthly_balance ?? 0) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")}>{formatRupiah(balance?.monthly_balance || 0)}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">Income − Expense this month</p>
+                </div>
+                {/* Monthly Income */}
+                <div className="bg-white rounded-2xl p-5 border border-[#EBEBEB]">
+                    <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Income</p>
+                        <TrendingUp size={14} className="text-[#16A34A]" />
+                    </div>
+                    <p className="text-2xl font-bold text-[#1A1A1A]">{formatRupiah(balance?.monthly_income || 0)}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">This month</p>
+                </div>
+                {/* Monthly Expense */}
+                <div className="bg-white rounded-2xl p-5 border border-[#EBEBEB]">
+                    <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Spent</p>
+                        <TrendingDown size={14} className="text-[#6B7280]" />
+                    </div>
+                    <p className="text-2xl font-bold text-[#1A1A1A]">{formatRupiah(stats?.total_amount || 0)}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">{stats?.total_transactions || 0} transactions</p>
+                </div>
+            </div>
+            {/* Row 2 stat cards */}
+            <div className="grid grid-cols-3 gap-4 mb-6">
+                {/* Total Balance */}
+                <div className="bg-white rounded-2xl p-5 border border-[#EBEBEB]">
+                    <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Total Balance</p>
+                    <p className={"text-2xl font-bold mt-1 " + ((balance?.total_balance ?? 0) >= 0 ? "text-[#1A1A1A]" : "text-[#DC2626]")}>{formatRupiah(balance?.total_balance || 0)}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">All time</p>
+                </div>
+                {/* Avg per transaction */}
+                <div className="bg-white rounded-2xl p-5 border border-[#EBEBEB]">
+                    <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Avg / Transaction</p>
+                    <p className="text-2xl font-bold mt-1 text-[#1A1A1A]">{formatRupiah(stats?.average_amount || 0)}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">This month</p>
+                </div>
+                {/* Anomalies */}
+                <div className={(stats?.anomaly_count ? "bg-[#FEF2F2]" : "bg-white") + " rounded-2xl p-5 border border-[#EBEBEB]"}>
+                    <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Anomalies Detected</p>
+                    <p className={"text-2xl font-bold mt-1 " + (stats?.anomaly_count ? "text-[#DC2626]" : "text-[#1A1A1A]")}>{stats?.anomaly_count || 0}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">This month</p>
+                </div>
             </div>
 
             {/* Row 1: Pie Chart + Anomaly/Recent */}

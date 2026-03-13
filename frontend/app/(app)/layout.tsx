@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Wallet, TrendingUp, List, Plus, Settings, LogOut } from "lucide-react";
+import { Wallet, TrendingUp, List, Plus, Settings, LogOut, DollarSign } from "lucide-react";
 
 const NAV_ITEMS = [
     { href: "/dashboard", Icon: TrendingUp, label: "Dashboard" },
     { href: "/transactions", Icon: List, label: "Transactions" },
+    { href: "/income", Icon: DollarSign, label: "Income" },
     { href: "/add", Icon: Plus, label: "Add Transaction" },
     { href: "/settings", Icon: Settings, label: "Settings" },
 ];

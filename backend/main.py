@@ -20,7 +20,7 @@ from sklearn.preprocessing import RobustScaler, LabelEncoder
 from contextlib import asynccontextmanager
 from dateutil.relativedelta import relativedelta
 
-from database import get_db, User, Transaction, Category, UserModel, init_db
+from database import get_db, User, Transaction, Category, UserModel, Income, init_db
 from auth import hash_password, verify_password, create_access_token, get_current_user
 
 # ============================================================
@@ -133,6 +133,12 @@ class BulkTransactionItem(BaseModel):
 class BulkTransactionSave(BaseModel):
     transactions: List[BulkTransactionItem]
 
+class IncomeCreate(BaseModel):
+    amount: float = Field(..., gt=0)
+    source: str
+    date: Optional[str] = None
+    is_recurring: bool = False
+
 # ============================================================
 # HELPER: Load model user dari DB
 # ============================================================
@@ -174,26 +180,17 @@ def calculate_score(amount, category_name, timestamp, model, scaler, encoder, no
 def retrain_user_model(user_id: int, db: Session, manual: bool = False):
     """
     Retrain model for a specific user.
-
-    - manual=False (auto): pakai semua transaksi (first retrain atau scheduled).
-    - manual=True (user-triggered): 
-        - Jika sudah pernah ditraining sebelumnya → filter hanya non-anomaly
-          (normal + warning) supaya model tidak belajar dari pola buruk.
-        - Jika belum pernah → tetap pakai semua data karena status anomaly
-          masih dari global model, belum tentu representatif.
+    Selalu pakai semua transaksi non-excluded.
+    Contamination dinamis hanya untuk manual retrain,
+    auto-retrain pakai default 0.1.
     """
     user_model_row = db.query(UserModel).filter(UserModel.user_id == user_id).first()
-    is_first_train = not user_model_row or not user_model_row.is_trained
 
     # Tentukan filter transaksi
     query = db.query(Transaction).filter(
         Transaction.user_id == user_id,
         Transaction.is_excluded == False,
     )
-
-    # if manual and not is_first_train:
-    #     # Retrain manual setelah model personal sudah ada → buang anomaly
-    #     query = query.filter(Transaction.anomaly_status != "anomaly")
 
     transactions = query.all()
 
@@ -220,7 +217,7 @@ def retrain_user_model(user_id: int, db: Session, manual: bool = False):
     # Hanya untuk manual retrain setelah personal model sudah ada
     # status anomaly di titik ini sudah dari personal model, bukan global,
     # sehingga lebih representatif sebagai estimasi kontaminasi nyata.
-    if manual and not is_first_train:
+    if manual:
         n_anomaly     = (df["status"] == "anomaly").sum()
         raw_contam    = n_anomaly / len(df)
         contamination = float(np.clip(raw_contam, 0.01, 0.5))
@@ -1009,6 +1006,178 @@ def model_status(
         return {"status": "global", "message": "Using global model (cold start)"}
     return {"status": "not_loaded", "message": "Model not yet available."}
 
+
+# ============================================================
+# ENDPOINTS — INCOME
+# ============================================================
+@app.post("/income", status_code=201)
+def create_income(
+    req: IncomeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    date = datetime.fromisoformat(req.date) if req.date else datetime.now(timezone.utc)
+    income = Income(
+        user_id      = current_user.id,
+        amount       = req.amount,
+        source       = req.source,
+        date         = date,
+        is_recurring = req.is_recurring,
+    )
+    db.add(income)
+    db.commit()
+    db.refresh(income)
+    return {
+        "id"          : income.id,
+        "amount"      : income.amount,
+        "source"      : income.source,
+        "date"        : income.date,
+        "is_recurring": income.is_recurring,
+    }
+ 
+@app.get("/income")
+def get_income(
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Return pemasukan user. Kalau month+year diberikan, filter by bulan.
+    Recurring income dari bulan sebelumnya otomatis di-generate kalau belum ada.
+    """
+    # Auto-generate recurring income untuk bulan ini kalau belum ada
+    if month and year:
+        _ensure_recurring_income(current_user.id, month, year, db)
+ 
+    query = db.query(Income).filter(Income.user_id == current_user.id)
+    if month and year:
+        last_day = calendar.monthrange(year, month)[1]
+        query = query.filter(
+            Income.date >= datetime(year, month, 1),
+            Income.date <= datetime(year, month, last_day, 23, 59, 59)
+        )
+    incomes = query.order_by(Income.date.desc()).all()
+    return [{
+        "id"          : i.id,
+        "amount"      : i.amount,
+        "source"      : i.source,
+        "date"        : i.date,
+        "is_recurring": i.is_recurring,
+    } for i in incomes]
+ 
+@app.delete("/income/{income_id}")
+def delete_income(
+    income_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    income = db.query(Income).filter(
+        Income.id == income_id,
+        Income.user_id == current_user.id
+    ).first()
+    if not income:
+        raise HTTPException(status_code=404, detail="Income not found.")
+    db.delete(income)
+    db.commit()
+    return {"message": "Income deleted."}
+ 
+@app.get("/balance")
+def get_balance(
+    month: Optional[int] = None,
+    year: Optional[int] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    now = datetime.now(timezone.utc)
+    m   = month or now.month
+    y   = year  or now.year
+ 
+    # Auto-generate recurring income bulan ini
+    _ensure_recurring_income(current_user.id, m, y, db)
+ 
+    last_day = calendar.monthrange(y, m)[1]
+ 
+    # Total all-time
+    all_incomes      = db.query(Income).filter(Income.user_id == current_user.id).all()
+    all_transactions = db.query(Transaction).filter(
+        Transaction.user_id    == current_user.id,
+        Transaction.is_excluded == False,
+    ).all()
+    total_income  = sum(i.amount for i in all_incomes)
+    total_expense = sum(t.amount for t in all_transactions)
+ 
+    # Bulanan
+    monthly_incomes = db.query(Income).filter(
+        Income.user_id == current_user.id,
+        Income.date    >= datetime(y, m, 1),
+        Income.date    <= datetime(y, m, last_day, 23, 59, 59),
+    ).all()
+    monthly_transactions = db.query(Transaction).filter(
+        Transaction.user_id    == current_user.id,
+        Transaction.is_excluded == False,
+        Transaction.timestamp  >= datetime(y, m, 1),
+        Transaction.timestamp  <= datetime(y, m, last_day, 23, 59, 59),
+    ).all()
+    monthly_income  = sum(i.amount for i in monthly_incomes)
+    monthly_expense = sum(t.amount for t in monthly_transactions)
+ 
+    return {
+        "total_balance"  : total_income - total_expense,
+        "monthly_balance" : monthly_income - monthly_expense,
+        "total_income"   : total_income,
+        "total_expense"  : total_expense,
+        "monthly_income" : monthly_income,
+        "monthly_expense": monthly_expense,
+        "month"          : m,
+        "year"           : y,
+    }
+
+def _ensure_recurring_income(user_id: int, month: int, year: int, db: Session):
+    """
+    Auto-generate recurring income untuk bulan tertentu
+    berdasarkan recurring income dari bulan sebelumnya,
+    kalau belum ada di bulan tersebut.
+    """
+    last_day = calendar.monthrange(year, month)[1]
+    start    = datetime(year, month, 1)
+    end      = datetime(year, month, last_day, 23, 59, 59)
+ 
+    # Cari semua recurring income yang sudah ada bulan ini
+    existing_sources = {
+        i.source for i in db.query(Income).filter(
+            Income.user_id    == user_id,
+            Income.is_recurring == True,
+            Income.date       >= start,
+            Income.date       <= end,
+        ).all()
+    }
+ 
+    # Cari recurring income dari bulan-bulan sebelumnya
+    prev_recurring = db.query(Income).filter(
+        Income.user_id      == user_id,
+        Income.is_recurring == True,
+        Income.date         < start,
+    ).all()
+ 
+    # Group by source — ambil yang terbaru per source
+    latest: dict = {}
+    for i in prev_recurring:
+        if i.source not in latest or i.date > latest[i.source].date:
+            latest[i.source] = i
+ 
+    # Generate yang belum ada
+    for source, inc in latest.items():
+        if source not in existing_sources:
+            db.add(Income(
+                user_id      = user_id,
+                amount       = inc.amount,
+                source       = source,
+                date         = datetime(year, month, inc.date.day if inc.date.day <= last_day else last_day),
+                is_recurring = True,
+            ))
+    db.commit()
+ 
 
 # ============================================================
 # RUN SERVER
