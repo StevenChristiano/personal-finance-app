@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from database import init_db
-from routers import auth, settings, transactions, stats, income, balance
+from routers import auth, settings, transactions, stats, income, balance, export
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +35,7 @@ app.include_router(transactions.router)
 app.include_router(stats.router)
 app.include_router(income.router)
 app.include_router(balance.router)
+app.include_router(export.router)
 
 if __name__ == "__main__":
     import uvicorn
