@@ -75,7 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* ── Page Content ── */}
-            <main className="ml-56">
+            <main className="ml-56 h-screen overflow-y-auto">
                 {children}
             </main>
         </div>

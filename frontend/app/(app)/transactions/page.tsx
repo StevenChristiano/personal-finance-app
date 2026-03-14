@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { transactionApi, type Transaction } from "@/lib/api";
 import { Trash2, Plus, ChevronLeft, ChevronRight, AlertCircle, AlertTriangle, CheckCircle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import ExportButton from "@/components/ExportButton";
 
 const CATEGORY_ICONS: Record<string, string> = {
     Food: "🍔", Transport: "🚗", Lifestyle: "👕", Entertainment: "🎮",
@@ -12,6 +13,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 function formatRupiah(amount: number) {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
@@ -23,20 +25,25 @@ function formatDate(ts: string) {
 
 export default function TransactionsPage() {
     const now = new Date();
-    const [month, setMonth] = useState(now.getMonth() + 1);
-    const [year, setYear] = useState(now.getFullYear());
+    const [month, setMonth]               = useState(now.getMonth() + 1);
+    const [year, setYear]                 = useState(now.getFullYear());
     const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [loading, setLoading]           = useState(true);
+    const [deletingId, setDeletingId]     = useState<number | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<string>("all");
-    const [sortKey, setSortKey] = useState<string>("timestamp");
-    const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-    const [showPicker, setShowPicker] = useState(false);
-    const [pickerYear, setPickerYear] = useState(now.getFullYear());
-    const pickerRef = useRef<HTMLDivElement>(null);
+    const [sortKey, setSortKey]           = useState<string>("timestamp");
+    const [sortDir, setSortDir]           = useState<"asc" | "desc">("desc");
+    const [showPicker, setShowPicker]     = useState(false);
+    const [pickerYear, setPickerYear]     = useState(now.getFullYear());
 
-    // Close picker on outside click
+    // Pagination
+    const [pageSize, setPageSize]         = useState(10);
+    const [currentPage, setCurrentPage]   = useState(1);
+
+    const pickerRef = useRef<HTMLDivElement>(null);
+    const headerRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
@@ -47,13 +54,14 @@ export default function TransactionsPage() {
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
-    useEffect(() => {
-        fetchTransactions();
-    }, [month, year]);
+    useEffect(() => { fetchTransactions(); }, [month, year]);
+
+    // Reset ke page 1 saat filter/sort/pageSize berubah
+    useEffect(() => { setCurrentPage(1); }, [selectedCategory, sortKey, sortDir, pageSize, month, year]);
 
     const fetchTransactions = async () => {
         setLoading(true);
-        setSelectedCategory("all"); // reset filter on month change
+        setSelectedCategory("all");
         try {
             const data = await transactionApi.getAll(month, year);
             setTransactions(data);
@@ -81,55 +89,57 @@ export default function TransactionsPage() {
         if (month === 1) { setMonth(12); setYear(y => y - 1); }
         else setMonth(m => m - 1);
     };
-
     const nextMonth = () => {
         if (month === 12) { setMonth(1); setYear(y => y + 1); }
         else setMonth(m => m + 1);
     };
 
-    const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
-    const anomalyCount = transactions.filter(t => t.anomaly_status === "anomaly").length;
-    const warningCount = transactions.filter(t => t.anomaly_status === "warning").length;
-
-    // Unique categories present in this month
+    const totalAmount    = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const anomalyCount   = transactions.filter(t => t.anomaly_status === "anomaly").length;
+    const warningCount   = transactions.filter(t => t.anomaly_status === "warning").length;
     const availableCategories = Array.from(new Set(transactions.map(t => t.category_name))).sort();
 
-    // Apply category filter
     const filteredTransactions = selectedCategory === "all"
         ? transactions
         : transactions.filter(t => t.category_name === selectedCategory);
 
     const filteredAnomalies = filteredTransactions.filter(t => t.anomaly_status === "anomaly").length;
-    const filteredWarnings = filteredTransactions.filter(t => t.anomaly_status === "warning").length;
+    const filteredWarnings  = filteredTransactions.filter(t => t.anomaly_status === "warning").length;
 
-    // Sort
     const handleSort = (key: string) => {
         if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
         else { setSortKey(key); setSortDir("asc"); }
     };
+
     const SortIcon = ({ col }: { col: string }) => {
         if (sortKey !== col) return <ArrowUpDown size={11} className="ml-1 opacity-30" />;
         return sortDir === "asc" ? <ArrowUp size={11} className="ml-1" /> : <ArrowDown size={11} className="ml-1" />;
     };
+
     const statusOrder = { anomaly: 2, warning: 1, normal: 0 };
     const sortedTransactions = [...filteredTransactions].sort((a, b) => {
-        let va: string | number = 0;
-        let vb: string | number = 0;
-        if (sortKey === "category") { va = a.category_name; vb = b.category_name; }
-        if (sortKey === "note") { va = a.note || ""; vb = b.note || ""; }
+        let va: string | number = 0, vb: string | number = 0;
+        if (sortKey === "category")  { va = a.category_name; vb = b.category_name; }
+        if (sortKey === "note")      { va = a.note || ""; vb = b.note || ""; }
         if (sortKey === "timestamp") { va = a.timestamp; vb = b.timestamp; }
-        if (sortKey === "amount") { va = a.amount; vb = b.amount; }
-        if (sortKey === "status") { va = statusOrder[a.anomaly_status as keyof typeof statusOrder] ?? -1; vb = statusOrder[b.anomaly_status as keyof typeof statusOrder] ?? -1; }
-        if (sortKey === "score") { va = a.anomaly_score ?? -1; vb = b.anomaly_score ?? -1; }
+        if (sortKey === "amount")    { va = a.amount; vb = b.amount; }
+        if (sortKey === "status")    { va = statusOrder[a.anomaly_status as keyof typeof statusOrder] ?? -1; vb = statusOrder[b.anomaly_status as keyof typeof statusOrder] ?? -1; }
+        if (sortKey === "score")     { va = a.anomaly_score ?? -1; vb = b.anomaly_score ?? -1; }
         if (va < vb) return sortDir === "asc" ? -1 : 1;
         if (va > vb) return sortDir === "asc" ? 1 : -1;
         return 0;
     });
 
+    // Pagination
+    const totalPages   = Math.max(1, Math.ceil(sortedTransactions.length / pageSize));
+    const pagedData    = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    const startIndex   = (currentPage - 1) * pageSize + 1;
+    const endIndex     = Math.min(currentPage * pageSize, sortedTransactions.length);
+
     const getStatusBadge = (status?: string) => {
         if (status === "anomaly") return <span className="flex items-center gap-1 text-xs font-medium text-[#DC2626] bg-[#FEF2F2] px-2 py-0.5 rounded-full"><AlertCircle size={10} />Anomaly</span>;
         if (status === "warning") return <span className="flex items-center gap-1 text-xs font-medium text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded-full"><AlertTriangle size={10} />Warning</span>;
-        if (status === "normal") return <span className="flex items-center gap-1 text-xs font-medium text-[#16A34A] bg-[#F0FDF4] px-2 py-0.5 rounded-full"><CheckCircle size={10} />Normal</span>;
+        if (status === "normal")  return <span className="flex items-center gap-1 text-xs font-medium text-[#16A34A] bg-[#F0FDF4] px-2 py-0.5 rounded-full"><CheckCircle size={10} />Normal</span>;
         return <span className="text-xs text-[#9CA3AF]">—</span>;
     };
 
@@ -141,10 +151,13 @@ export default function TransactionsPage() {
                     <h1 className="text-2xl font-bold text-[#1A1A1A]">Transactions</h1>
                     <p className="text-[#6B7280] text-sm mt-0.5">Track and manage your spending history</p>
                 </div>
-                <Link href="/add"
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors">
-                    <Plus size={16} />Add Transaction
-                </Link>
+                <div className="flex items-center gap-3">
+                    <ExportButton month={month} year={year} />
+                    <Link href="/add"
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors">
+                        <Plus size={16} />Add Transaction
+                    </Link>
+                </div>
             </div>
 
             {/* Stat Cards */}
@@ -176,49 +189,33 @@ export default function TransactionsPage() {
                 <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-[#F7F7F5] transition-colors">
                     <ChevronLeft size={18} className="text-[#6B7280]" />
                 </button>
-
-                {/* Clickable label */}
-                <button onClick={() => { setPickerYear(year); setShowPicker(p => !p); }}
-                    className="text-center group">
+                <button onClick={() => { setPickerYear(year); setShowPicker(p => !p); }} className="text-center group">
                     <p className="font-semibold text-[#1A1A1A] group-hover:text-[#6B7280] transition-colors underline-offset-2 group-hover:underline cursor-pointer">
                         {MONTHS[month - 1]} {year}
                     </p>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">{transactions.length} transactions · {formatRupiah(totalAmount)}</p>
                 </button>
-
                 <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-[#F7F7F5] transition-colors">
                     <ChevronRight size={18} className="text-[#6B7280]" />
                 </button>
 
-                {/* Picker Popover */}
                 {showPicker && (
                     <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border border-[#EBEBEB] rounded-2xl shadow-lg p-4 z-20 w-64">
-                        {/* Year navigation */}
                         <div className="flex items-center justify-between mb-3">
-                            <button onClick={() => setPickerYear(y => y - 1)}
-                                className="p-1.5 rounded-lg hover:bg-[#F7F7F5] transition-colors">
+                            <button onClick={() => setPickerYear(y => y - 1)} className="p-1.5 rounded-lg hover:bg-[#F7F7F5] transition-colors">
                                 <ChevronLeft size={14} className="text-[#6B7280]" />
                             </button>
                             <span className="text-sm font-semibold text-[#1A1A1A]">{pickerYear}</span>
-                            <button onClick={() => setPickerYear(y => y + 1)}
-                                className="p-1.5 rounded-lg hover:bg-[#F7F7F5] transition-colors">
+                            <button onClick={() => setPickerYear(y => y + 1)} className="p-1.5 rounded-lg hover:bg-[#F7F7F5] transition-colors">
                                 <ChevronRight size={14} className="text-[#6B7280]" />
                             </button>
                         </div>
-                        {/* Month grid */}
                         <div className="grid grid-cols-3 gap-1.5">
                             {MONTHS.map((m, i) => {
                                 const isActive = (i + 1) === month && pickerYear === year;
                                 return (
-                                    <button key={m} onClick={() => {
-                                        setMonth(i + 1);
-                                        setYear(pickerYear);
-                                        setShowPicker(false);
-                                    }}
-                                        className={`py-1.5 rounded-xl text-xs font-medium transition-colors ${isActive
-                                            ? "bg-[#1A1A1A] text-white"
-                                            : "hover:bg-[#F7F7F5] text-[#374151]"
-                                            }`}>
+                                    <button key={m} onClick={() => { setMonth(i + 1); setYear(pickerYear); setShowPicker(false); }}
+                                        className={`py-1.5 rounded-xl text-xs font-medium transition-colors ${isActive ? "bg-[#1A1A1A] text-white" : "hover:bg-[#F7F7F5] text-[#374151]"}`}>
                                         {m.slice(0, 3)}
                                     </button>
                                 );
@@ -234,16 +231,14 @@ export default function TransactionsPage() {
                     <button onClick={() => setSelectedCategory("all")}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${selectedCategory === "all"
                             ? "bg-[#1A1A1A] text-white border-[#1A1A1A]"
-                            : "bg-white text-[#6B7280] border-[#EBEBEB] hover:border-[#9CA3AF]"
-                            }`}>
+                            : "bg-white text-[#6B7280] border-[#EBEBEB] hover:border-[#9CA3AF]"}`}>
                         All ({transactions.length})
                     </button>
                     {availableCategories.map(cat => (
                         <button key={cat} onClick={() => setSelectedCategory(cat)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${selectedCategory === cat
                                 ? "bg-[#1A1A1A] text-white border-[#1A1A1A]"
-                                : "bg-white text-[#6B7280] border-[#EBEBEB] hover:border-[#9CA3AF]"
-                                }`}>
+                                : "bg-white text-[#6B7280] border-[#EBEBEB] hover:border-[#9CA3AF]"}`}>
                             {CATEGORY_ICONS[cat] || "💳"} {cat} ({transactions.filter(t => t.category_name === cat).length})
                         </button>
                     ))}
@@ -269,7 +264,7 @@ export default function TransactionsPage() {
                 </div>
             )}
 
-            {/* Transactions List */}
+            {/* Transactions Table */}
             {loading ? (
                 <div className="text-center py-16 text-[#9CA3AF] text-sm">Loading...</div>
             ) : filteredTransactions.length === 0 ? (
@@ -291,38 +286,45 @@ export default function TransactionsPage() {
                     )}
                 </div>
             ) : (
-                <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden">
-                    <div className="grid grid-cols-12 px-5 py-3 bg-[#F9FAFB] border-b border-[#EBEBEB] text-xs font-medium text-[#6B7280] uppercase tracking-wide">
-                        {[{ label: "Category", key: "category", span: "col-span-3" },
-                        { label: "Note", key: "note", span: "col-span-3" },
-                        { label: "Date & Time", key: "timestamp", span: "col-span-2" }].map(col => (
+                <div className="bg-white rounded-2xl border border-[#EBEBEB] flex flex-col h-150 overflow-hidden">
+                    {/* Sticky Header */}
+                    <div
+                        ref={headerRef}
+                        className="grid grid-cols-12 px-5 py-3 bg-[#F9FAFB] border-b border-[#EBEBEB] text-xs font-medium text-[#6B7280] uppercase tracking-wide shadow-sm flex-shrink-0 rounded-t-2xl"
+                    >
+                        {[
+                            { label: "Category",   key: "category",  span: "col-span-3" },
+                            { label: "Note",       key: "note",      span: "col-span-3" },
+                            { label: "Date & Time",key: "timestamp", span: "col-span-2" },
+                        ].map(col => (
                             <button key={col.key} onClick={() => handleSort(col.key)}
-                                className={`${col.span} flex items-center hover:text-[#1A1A1A] transition-colors ${sortKey === col.key ? "text-[#1A1A1A]" : ""
-                                    }`}>
+                                className={`${col.span} flex items-center hover:text-[#1A1A1A] transition-colors ${sortKey === col.key ? "text-[#1A1A1A]" : ""}`}>
                                 {col.label}<SortIcon col={col.key} />
                             </button>
                         ))}
                         <button onClick={() => handleSort("amount")}
-                            className={`col-span-2 flex items-center justify-end hover:text-[#1A1A1A] transition-colors ${sortKey === "amount" ? "text-[#1A1A1A]" : ""
-                                }`}>
+                            className={`col-span-2 flex items-center justify-end hover:text-[#1A1A1A] transition-colors ${sortKey === "amount" ? "text-[#1A1A1A]" : ""}`}>
                             Amount<SortIcon col="amount" />
                         </button>
                         <button onClick={() => handleSort("status")}
-                            className={`col-span-1 flex items-center justify-center hover:text-[#1A1A1A] transition-colors ${sortKey === "status" ? "text-[#1A1A1A]" : ""
-                                }`}>
+                            className={`col-span-1 flex items-center justify-center hover:text-[#1A1A1A] transition-colors ${sortKey === "status" ? "text-[#1A1A1A]" : ""}`}>
                             Status<SortIcon col="status" />
                         </button>
                         <button onClick={() => handleSort("score")}
-                            className={`col-span-1 flex items-center justify-center hover:text-[#1A1A1A] transition-colors ${sortKey === "score" ? "text-[#1A1A1A]" : ""
-                                }`}>
+                            className={`col-span-1 flex items-center justify-center hover:text-[#1A1A1A] transition-colors ${sortKey === "score" ? "text-[#1A1A1A]" : ""}`}>
                             Score<SortIcon col="score" />
                         </button>
                     </div>
-                    {sortedTransactions.map((t) => (
+
+                    {/* Scrollable Body */}
+                    <div className="overflow-y-auto flex-1">
+                        {/* Rows */}
+                        {pagedData.map((t) => (
                         <div key={t.id}
-                            className={`grid grid-cols-12 px-5 py-4 border-b border-[#F3F4F6] last:border-0 items-center hover:bg-[#FAFAFA] transition-colors group ${t.anomaly_status === "anomaly" ? "bg-[#FFF8F8]" :
+                            className={`grid grid-cols-12 px-5 py-4 border-b border-[#F3F4F6] last:border-0 items-center hover:bg-[#FAFAFA] transition-colors group ${
+                                t.anomaly_status === "anomaly" ? "bg-[#FFF8F8]" :
                                 t.anomaly_status === "warning" ? "bg-[#FFFEF5]" : ""
-                                }`}>
+                            }`}>
                             <div className="col-span-3 flex items-center gap-2.5">
                                 <span className="text-lg">{CATEGORY_ICONS[t.category_name] || "💳"}</span>
                                 <span className="text-sm font-medium text-[#1A1A1A]">{t.category_name}</span>
@@ -341,22 +343,110 @@ export default function TransactionsPage() {
                             </div>
                             <div className="col-span-1 flex items-center justify-center gap-2">
                                 {!t.is_excluded && t.anomaly_score != null ? (
-                                    <span className={`text-xs font-medium ${t.anomaly_status === "anomaly" ? "text-[#DC2626]" :
+                                    <span className={`text-xs font-medium ${
+                                        t.anomaly_status === "anomaly" ? "text-[#DC2626]" :
                                         t.anomaly_status === "warning" ? "text-[#D97706]" : "text-[#16A34A]"
-                                        }`}>
+                                    }`}>
                                         {(t.anomaly_score * 100).toFixed(0)}%
                                     </span>
                                 ) : (
                                     <span className="text-xs text-[#D1D5DB]">—</span>
                                 )}
-                                <button
-                                    onClick={() => setConfirmDelete(t.id)}
+                                <button onClick={() => setConfirmDelete(t.id)}
                                     className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-[#FEF2F2] text-[#9CA3AF] hover:text-[#DC2626] transition-all">
                                     <Trash2 size={13} />
                                 </button>
                             </div>
                         </div>
-                    ))}
+                        ))}
+                    </div>
+
+                    {/* Pagination Footer */}
+                    <div className="flex items-center justify-between px-5 py-3 border-t border-[#EBEBEB] bg-[#F9FAFB] flex-shrink-0 rounded-b-2xl">
+                        {/* Page size selector */}
+                        <div className="flex items-center gap-2 text-xs text-[#6B7280]">
+                            <span>Show</span>
+                            <div className="flex gap-1">
+                                {PAGE_SIZE_OPTIONS.map(size => (
+                                    <button
+                                        key={size}
+                                        onClick={() => setPageSize(size)}
+                                        className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                                            pageSize === size
+                                                ? "bg-[#1A1A1A] text-white"
+                                                : "bg-white border border-[#EBEBEB] text-[#6B7280] hover:border-[#9CA3AF]"
+                                        }`}
+                                    >
+                                        {size}
+                                    </button>
+                                ))}
+                            </div>
+                            <span>per page</span>
+                            <span className="ml-2 text-[#9CA3AF]">
+                                {startIndex}–{endIndex} of {sortedTransactions.length}
+                            </span>
+                        </div>
+
+                        {/* Page navigation */}
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setCurrentPage(1)}
+                                disabled={currentPage === 1}
+                                className="px-2 py-1 rounded-lg text-xs text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                «
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage(p => p - 1)}
+                                disabled={currentPage === 1}
+                                className="p-1.5 rounded-lg text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronLeft size={14} />
+                            </button>
+
+                            {/* Page numbers */}
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                                .reduce<(number | "...")[]>((acc, p, i, arr) => {
+                                    if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push("...");
+                                    acc.push(p);
+                                    return acc;
+                                }, [])
+                                .map((p, i) =>
+                                    p === "..." ? (
+                                        <span key={`ellipsis-${i}`} className="px-2 text-xs text-[#9CA3AF]">...</span>
+                                    ) : (
+                                        <button
+                                            key={p}
+                                            onClick={() => setCurrentPage(p as number)}
+                                            className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
+                                                currentPage === p
+                                                    ? "bg-[#1A1A1A] text-white"
+                                                    : "text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB]"
+                                            }`}
+                                        >
+                                            {p}
+                                        </button>
+                                    )
+                                )
+                            }
+
+                            <button
+                                onClick={() => setCurrentPage(p => p + 1)}
+                                disabled={currentPage === totalPages}
+                                className="p-1.5 rounded-lg text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronRight size={14} />
+                            </button>
+                            <button
+                                onClick={() => setCurrentPage(totalPages)}
+                                disabled={currentPage === totalPages}
+                                className="px-2 py-1 rounded-lg text-xs text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                            >
+                                »
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
