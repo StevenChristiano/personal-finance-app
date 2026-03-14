@@ -107,6 +107,25 @@ export interface BulkTransactionItem {
   timestamp?: string;
 }
 
+export type Income = {
+    id          : number;
+    amount      : number;
+    source      : string;
+    date        : string;
+    is_recurring: boolean;
+};
+ 
+export type Balance = {
+    total_balance  : number;
+    monthly_balance: number;
+    total_income   : number;
+    total_expense  : number;
+    monthly_income : number;
+    monthly_expense: number;
+    month          : number;
+    year           : number;
+};
+ 
 // ============================================================
 // AUTH
 // ============================================================
@@ -221,6 +240,57 @@ export const transactionApi = {
 };
 
 // ============================================================
+// INCOME
+// ============================================================
+
+export const incomeApi = {
+    getAll: async (month?: number, year?: number): Promise<Income[]> => {
+        const params = month && year ? `?month=${month}&year=${year}` : "";
+        const res = await api.get(`/income${params}`);
+        return res.data;
+    },
+ 
+    create: async (data: {
+        amount      : number;
+        source      : string;
+        date        : string;
+        is_recurring: boolean;
+    }): Promise<Income> => {
+        const res = await api.post("/income", data);
+        return res.data;
+    },
+ 
+    delete: async (id: number): Promise<void> => {
+        await api.delete(`/income/${id}`);
+    },
+ 
+    toggleRecurring: async (id: number): Promise<{ id: number; source: string; is_recurring: boolean }> => {
+        const res = await api.patch(`/income/${id}/toggle-recurring`);
+        return res.data;
+    },
+ 
+    getSources: async (): Promise<{ sources: string[] }> => {
+        const res = await api.get("/income/sources");
+        return res.data;
+    },
+ 
+    getSummary: async (): Promise<{
+        total_all_time   : number;
+        yearly           : { year: number; total: number }[];
+        recurring_sources: { source: string; amount: number }[];
+    }> => {
+        const res = await api.get("/income/summary");
+        return res.data;
+    },
+ 
+    getBalance: async (month?: number, year?: number): Promise<Balance> => {
+        const params = month && year ? `?month=${month}&year=${year}` : "";
+        const res = await api.get(`/balance${params}`);
+        return res.data;
+    },
+};
+
+// ============================================================
 // STATS
 // ============================================================
 export const statsApi = {
@@ -262,6 +332,11 @@ export const statsApi = {
 export const modelApi = {
   coldStartStatus: async (): Promise<ColdStartStatus> => {
     const res = await api.get("/cold-start-status");
+    return res.data;
+  },
+  
+  retrain: async () => {
+    const res = await api.post("/retrain");
     return res.data;
   },
 
