@@ -12,10 +12,17 @@ Cara pakai:
     python evaluate.py --user_id 1
     python evaluate.py --user_id 1 --k 2.0
     python evaluate.py --user_id 1 --output hasil_evaluasi.json
+    python evaluate.py --user_id 1 --plot                          ← generate semua plot
+    python evaluate.py --user_id 1 --plot --plot_dir hasil_plot/   ← custom output folder
+
+Plot yang di-generate (jika --plot):
+    roc_curve.png          ← ROC Curve dengan AUC score
+    score_distribution.png ← Distribusi anomaly score normal vs anomali
 
 Referensi pendekatan pseudo-labeling:
     Liu, F.T., Ting, K.M., & Zhou, Z.H. (2008). Isolation Forest.
     Chandola, V., Banerjee, A., & Kumar, V. (2009). Anomaly Detection: A Survey.
+    AutoTSAD (PVLDB, 2024) — 2σ-thresholding untuk pseudo ground truth.
 """
 
 import argparse
@@ -28,8 +35,15 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sklearn.metrics import (
     precision_score, recall_score, f1_score,
-    confusion_matrix, roc_auc_score, average_precision_score
+    confusion_matrix, roc_auc_score, average_precision_score,
+    roc_curve
 )
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import os
 
 # Import dari project
 from database import get_db, Transaction, Category, UserModel, init_db
@@ -40,6 +54,13 @@ from database import get_db, Transaction, Category, UserModel, init_db
 MODEL_DIR         = "model"
 THRESHOLD_ANOMALY = 0.60
 THRESHOLD_WARNING = 0.50
+
+# Warna plot konsisten
+COLOR_CURVE    = "#1A56DB"
+COLOR_DIAGONAL = "#9CA3AF"
+COLOR_POINT    = "#E02424"
+COLOR_NORMAL   = "#3B82F6"
+COLOR_ANOMALY  = "#EF4444"
 
 
 # ============================================================
@@ -61,7 +82,6 @@ def load_model_for_user(user_id: int, db: Session):
         print(f"✅ Personal model loaded (trained on {user_model_row.transaction_count} transactions)")
         return model, scaler, encoder, norm_params, source
 
-    # Fallback ke global model
     try:
         with open(f"{MODEL_DIR}/isolation_forest.pkl", "rb") as f:
             model = pickle.load(f)
@@ -81,7 +101,7 @@ def load_model_for_user(user_id: int, db: Session):
 # ============================================================
 # PSEUDO-LABELING: Statistical rule-based ground truth
 # ============================================================
-def create_pseudo_labels(df: pd.DataFrame, k: float = 2.0) -> np.ndarray:
+def create_pseudo_labels(df: pd.DataFrame, k: float = 1.0) -> np.ndarray:
     """
     Buat pseudo ground truth label menggunakan per-category z-score threshold.
 
@@ -91,9 +111,9 @@ def create_pseudo_labels(df: pd.DataFrame, k: float = 2.0) -> np.ndarray:
         Sisanya → label normal (0)
 
     Parameter k:
-        k=2.0 → ~5% data dianggap anomali (default, konservatif)
-        k=1.5 → ~7% data dianggap anomali (lebih sensitif)
-        k=3.0 → ~1% data dianggap anomali (sangat ketat)
+        k=1.0 → ~16% data dianggap anomali (sensitif)
+        k=2.0 → ~5%  data dianggap anomali (konservatif, default akademis)
+        k=3.0 → ~1%  data dianggap anomali (sangat ketat)
 
     Catatan untuk paper:
         Metode ini adalah proxy, bukan ground truth absolut.
@@ -106,7 +126,6 @@ def create_pseudo_labels(df: pd.DataFrame, k: float = 2.0) -> np.ndarray:
         subset = df.loc[mask, "amount"]
 
         if len(subset) < 5:
-            # Terlalu sedikit data per kategori, skip
             continue
 
         mean = subset.mean()
@@ -115,7 +134,6 @@ def create_pseudo_labels(df: pd.DataFrame, k: float = 2.0) -> np.ndarray:
         if std == 0:
             continue
 
-        # Flag sebagai anomali jika melebihi threshold statistik
         anomaly_mask = (df["category"] == category) & (df["amount"] > mean + k * std)
         labels[anomaly_mask] = 1
 
@@ -132,20 +150,18 @@ def compute_model_scores(df: pd.DataFrame, model, scaler, encoder, norm_params,
     Jalankan model pada seluruh dataset, kembalikan scores dan predicted labels.
     Juga ukur latency per prediksi.
     """
-    scores     = []
+    scores      = []
     pred_labels = []
-    latencies  = []  # milliseconds per transaksi
+    latencies   = []
 
     for _, row in df.iterrows():
-        # Cek apakah kategori dikenal oleh encoder
         if row["category"] not in encoder.classes_:
             scores.append(None)
             pred_labels.append(None)
             latencies.append(None)
             continue
 
-        start = time.perf_counter()
-
+        start            = time.perf_counter()
         hour             = row["hour"]
         day_of_week      = row["day_of_week"]
         amount_scaled    = scaler.transform(pd.DataFrame([[row["amount"]]], columns=["amount"]))[0][0]
@@ -155,10 +171,9 @@ def compute_model_scores(df: pd.DataFrame, model, scaler, encoder, norm_params,
         min_s            = norm_params["min_score"]
         max_s            = norm_params["max_score"]
         score            = float(np.clip((raw_score - min_s) / (max_s - min_s), 0, 1))
+        end              = time.perf_counter()
 
-        end = time.perf_counter()
-        latencies.append((end - start) * 1000)  # convert ke ms
-
+        latencies.append((end - start) * 1000)
         scores.append(score)
         pred_labels.append(1 if score >= anomaly_threshold else 0)
 
@@ -166,12 +181,151 @@ def compute_model_scores(df: pd.DataFrame, model, scaler, encoder, norm_params,
 
 
 # ============================================================
+# PLOT 1: ROC Curve
+# ============================================================
+def plot_roc_curve(true_labels: np.ndarray, scores: np.ndarray,
+                   anomaly_threshold: float = THRESHOLD_ANOMALY,
+                   output_path: str = "roc_curve.png",
+                   user_id: int = None, model_source: str = "personal",
+                   n_transactions: int = None):
+    """Generate dan simpan ROC Curve."""
+
+    fpr, tpr, thresholds = roc_curve(true_labels, scores)
+    roc_auc_val          = roc_auc_score(true_labels, scores)
+
+    # Titik operasi (closest ke anomaly_threshold)
+    closest_idx  = np.argmin(np.abs(thresholds - anomaly_threshold))
+    op_fpr       = fpr[closest_idx]
+    op_tpr       = tpr[closest_idx]
+    op_threshold = thresholds[closest_idx]
+
+    fig, ax = plt.subplots(figsize=(7, 6))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    ax.fill_between(fpr, tpr, alpha=0.12, color="#EBF5FB", zorder=1)
+    ax.plot([0, 1], [0, 1], linestyle="--", linewidth=1.2,
+            color=COLOR_DIAGONAL, zorder=2, label="Random Classifier (AUC = 0.50)")
+    ax.plot(fpr, tpr, color=COLOR_CURVE, linewidth=2.2, zorder=3,
+            label=f"Isolation Forest (AUC = {roc_auc_val:.4f})")
+    ax.scatter([op_fpr], [op_tpr], color=COLOR_POINT, s=80, zorder=5,
+               label=f"Operating Point (threshold = {op_threshold:.2f})\n"
+                     f"TPR = {op_tpr:.3f}, FPR = {op_fpr:.3f}")
+    ax.plot([op_fpr, op_fpr], [0, op_tpr], linestyle=":", linewidth=0.9,
+            color=COLOR_POINT, alpha=0.6, zorder=4)
+    ax.plot([0, op_fpr], [op_tpr, op_tpr], linestyle=":", linewidth=0.9,
+            color=COLOR_POINT, alpha=0.6, zorder=4)
+
+    ax.set_xlabel("False Positive Rate (FPR)", fontsize=12, labelpad=8)
+    ax.set_ylabel("True Positive Rate (TPR)", fontsize=12, labelpad=8)
+
+    title_parts = []
+    if user_id:        title_parts.append(f"User ID: {user_id}")
+    if model_source:   title_parts.append(f"Model: {model_source}")
+    if n_transactions: title_parts.append(f"N = {n_transactions} transactions")
+
+    ax.set_title(
+        f"ROC Curve — Isolation Forest Anomaly Detection\n" + " | ".join(title_parts),
+        fontsize=11, fontweight="bold", pad=12
+    )
+    ax.set_xlim([-0.01, 1.01])
+    ax.set_ylim([-0.01, 1.01])
+    ax.set_aspect("equal")
+    ax.legend(loc="lower right", fontsize=9.5, framealpha=0.9, edgecolor="#D1D5DB")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5, color="#E5E7EB")
+    ax.set_axisbelow(True)
+    ax.text(0.57, 0.12, f"AUC = {roc_auc_val:.4f}",
+            fontsize=13, fontweight="bold", color=COLOR_CURVE,
+            transform=ax.transAxes,
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="white",
+                      edgecolor=COLOR_CURVE, linewidth=1.2))
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight",
+                facecolor="white", edgecolor="none")
+    plt.close()
+    print(f"   📊 ROC curve saved      : {output_path}")
+    return roc_auc_val
+
+
+# ============================================================
+# PLOT 2: Anomaly Score Distribution
+# ============================================================
+def plot_score_distribution(scores: np.ndarray, true_labels: np.ndarray,
+                             anomaly_threshold: float = THRESHOLD_ANOMALY,
+                             warning_threshold: float = THRESHOLD_WARNING,
+                             output_path: str = "score_distribution.png",
+                             user_id: int = None, model_source: str = "personal"):
+    """
+    Generate histogram distribusi anomaly score, dipisah antara
+    transaksi normal (pseudo-label=0) dan anomali (pseudo-label=1).
+
+    Plot ini membuktikan model membentuk decision boundary yang bermakna.
+    """
+    scores_normal  = scores[true_labels == 0]
+    scores_anomaly = scores[true_labels == 1]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+
+    # Tentukan bins yang konsisten
+    bins = np.linspace(0, 1, 30)
+
+    ax.hist(scores_normal, bins=bins, alpha=0.65, color=COLOR_NORMAL,
+            label=f"Normal (n={len(scores_normal)})", edgecolor="white", linewidth=0.5)
+    ax.hist(scores_anomaly, bins=bins, alpha=0.75, color=COLOR_ANOMALY,
+            label=f"Anomaly — pseudo-label (n={len(scores_anomaly)})",
+            edgecolor="white", linewidth=0.5)
+
+    # Garis threshold
+    ax.axvline(x=anomaly_threshold, color=COLOR_ANOMALY, linestyle="--",
+               linewidth=1.8, label=f"Anomaly Threshold ({anomaly_threshold})")
+    ax.axvline(x=warning_threshold, color="#F59E0B", linestyle=":",
+               linewidth=1.5, label=f"Warning Threshold ({warning_threshold})")
+
+    # Shading zona
+    ax.axvspan(anomaly_threshold, 1.0, alpha=0.07, color=COLOR_ANOMALY, zorder=0)
+    ax.axvspan(warning_threshold, anomaly_threshold, alpha=0.05, color="#F59E0B", zorder=0)
+
+    # Anotasi zona
+    ax.text(anomaly_threshold + 0.01, ax.get_ylim()[1] * 0.88,
+            "Anomaly\nZone", fontsize=8, color=COLOR_ANOMALY, alpha=0.8)
+    ax.text(warning_threshold + 0.01, ax.get_ylim()[1] * 0.88,
+            "Warning\nZone", fontsize=8, color="#B45309", alpha=0.8)
+
+    ax.set_xlabel("Anomaly Score", fontsize=12, labelpad=8)
+    ax.set_ylabel("Number of Transactions", fontsize=12, labelpad=8)
+
+    title_parts = []
+    if user_id:      title_parts.append(f"User ID: {user_id}")
+    if model_source: title_parts.append(f"Model: {model_source}")
+
+    ax.set_title(
+        f"Anomaly Score Distribution — Isolation Forest\n" + " | ".join(title_parts),
+        fontsize=11, fontweight="bold", pad=12
+    )
+    ax.set_xlim([0, 1])
+    ax.legend(fontsize=9.5, framealpha=0.9, edgecolor="#D1D5DB")
+    ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.4, color="#E5E7EB", axis="y")
+    ax.set_axisbelow(True)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches="tight",
+                facecolor="white", edgecolor="none")
+    plt.close()
+    print(f"   📊 Score distribution saved: {output_path}")
+
+
+# ============================================================
 # MAIN EVALUATION
 # ============================================================
-def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
+def evaluate(user_id: int, k: float = 1.0, output_path: str = None,
              warning_threshold: float = THRESHOLD_WARNING,
              anomaly_threshold: float = THRESHOLD_ANOMALY,
-             hide_tn: bool = False):
+             hide_tn: bool = False,
+             plot: bool = False,
+             plot_dir: str = "."):
 
     init_db()
     db: Session = next(get_db())
@@ -209,7 +363,7 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
     # ── 2. Load model ──────────────────────────────────────
     model, scaler, encoder, norm_params, model_source = load_model_for_user(user_id, db)
 
-    # ── 3. Buat pseudo ground truth labels ────────────────
+    # ── 3. Pseudo-labels ───────────────────────────────────
     print(f"🏷️  Creating pseudo ground truth labels (k={k})...")
     true_labels = create_pseudo_labels(df, k=k)
     n_anomaly   = true_labels.sum()
@@ -221,7 +375,7 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
         print("⚠️  No anomalies found with current k value. Try lowering k (e.g. --k 1.5)")
         return
 
-    # ── 4. Scoring model ───────────────────────────────────
+    # ── 4. Scoring ─────────────────────────────────────────
     print("🔍 Running model inference...")
     scores, pred_labels, latencies = compute_model_scores(
         df, model, scaler, encoder, norm_params,
@@ -229,7 +383,6 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
         anomaly_threshold=anomaly_threshold
     )
 
-    # Filter baris yang bisa dievaluasi (kategori dikenal encoder)
     valid_mask   = np.array([s is not None for s in scores])
     n_skipped    = (~valid_mask).sum()
     if n_skipped > 0:
@@ -241,7 +394,6 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
     latencies_valid   = [l for l, v in zip(latencies, valid_mask) if v]
     df_valid          = df[valid_mask].reset_index(drop=True)
 
-    # Klasifikasi per transaksi ke TP / TN / FP / FN
     def classify_result(true_label, pred_label):
         if true_label == 1 and pred_label == 1: return "TP"
         if true_label == 0 and pred_label == 0: return "TN"
@@ -256,13 +408,12 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
         for t, p in zip(true_labels_valid, pred_labels_valid)
     ]
 
-    # ── 5. Hitung metrik ───────────────────────────────────
+    # ── 5. Metrics ─────────────────────────────────────────
     precision = precision_score(true_labels_valid, pred_labels_valid, zero_division=0)
     recall    = recall_score(true_labels_valid, pred_labels_valid, zero_division=0)
     f1        = f1_score(true_labels_valid, pred_labels_valid, zero_division=0)
     cm        = confusion_matrix(true_labels_valid, pred_labels_valid)
 
-    # ROC-AUC dan PR-AUC (butuh scores kontinu, bukan binary)
     try:
         roc_auc = roc_auc_score(true_labels_valid, scores_valid)
         pr_auc  = average_precision_score(true_labels_valid, scores_valid)
@@ -270,13 +421,11 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
         roc_auc = None
         pr_auc  = None
 
-    # Latency stats
     lat_mean   = np.mean(latencies_valid)
     lat_median = np.median(latencies_valid)
     lat_p95    = np.percentile(latencies_valid, 95)
     lat_p99    = np.percentile(latencies_valid, 99)
 
-    # Anomaly rate dari model
     anomaly_rate = pred_labels_valid.sum() / len(pred_labels_valid)
     warning_rate = sum(
         1 for s in scores_valid
@@ -290,10 +439,8 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
     print(f"  Precision   : {precision:.4f}  ({precision*100:.1f}%)")
     print(f"  Recall      : {recall:.4f}  ({recall*100:.1f}%)")
     print(f"  F1-Score    : {f1:.4f}  ({f1*100:.1f}%)")
-    if roc_auc:
-        print(f"  ROC-AUC     : {roc_auc:.4f}")
-    if pr_auc:
-        print(f"  PR-AUC      : {pr_auc:.4f}")
+    if roc_auc: print(f"  ROC-AUC     : {roc_auc:.4f}")
+    if pr_auc:  print(f"  PR-AUC      : {pr_auc:.4f}")
 
     print(f"\n  CONFUSION MATRIX")
     print(f"  {'':>12} Pred Normal  Pred Anomaly")
@@ -306,8 +453,7 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
     print(f"  FP (false alarm)           : {fp}")
     print(f"  FN (missed anomaly)        : {fn}")
 
-    # ── 6b. Print detail per transaksi ────────────────────
-    def print_transaction_group(label: str, emoji: str, color_note: str, result_type: str):
+    def print_transaction_group(label, emoji, color_note, result_type):
         subset = df_valid[df_valid["result_type"] == result_type].copy()
         subset = subset.sort_values("score", ascending=False)
         print(f"\n  {emoji} {label} ({result_type}) — {len(subset)} transaksi  {color_note}")
@@ -317,42 +463,26 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
         print(f"  {'No':<4} {'Timestamp':<20} {'Category':<18} {'Amount':>12}  {'Score':>6}  {'Note'}")
         print(f"  {'─'*4} {'─'*20} {'─'*18} {'─'*12}  {'─'*6}  {'─'*20}")
         for i, (_, row) in enumerate(subset.iterrows(), 1):
-            ts_str  = str(row["timestamp"])[:19]
-            note    = "(pseudo: normal)" if result_type == "FP" else "(pseudo: anomaly)" if result_type == "FN" else ""
+            ts_str = str(row["timestamp"])[:19]
+            note   = "(pseudo: normal)" if result_type == "FP" else "(pseudo: anomaly)" if result_type == "FN" else ""
             print(f"  {i:<4} {ts_str:<20} {row['category']:<18} {row['amount']:>12,.0f}  {row['score']:>6.3f}  {note}")
 
     print(f"\n{'─'*60}")
     print(f"  DETAIL PER TRANSAKSI")
     print(f"{'─'*60}")
-
-    print_transaction_group(
-        "TRUE POSITIVE  — Benar dideteksi anomali",
-        "✅", "(model benar, transaksi memang tidak wajar)", "TP"
-    )
-    print_transaction_group(
-        "FALSE POSITIVE — False alarm",
-        "⚠️ ", "(model salah, transaksi sebenarnya normal)", "FP"
-    )
-    print_transaction_group(
-        "FALSE NEGATIVE — Anomali yang lolos",
-        "❌", "(model miss, transaksi sebenarnya anomali)", "FN"
-    )
+    print_transaction_group("TRUE POSITIVE  — Benar dideteksi anomali", "✅", "(model benar, transaksi memang tidak wajar)", "TP")
+    print_transaction_group("FALSE POSITIVE — False alarm",              "⚠️ ", "(model salah, transaksi sebenarnya normal)",   "FP")
+    print_transaction_group("FALSE NEGATIVE — Anomali yang lolos",       "❌", "(model miss, transaksi sebenarnya anomali)",   "FN")
     if not hide_tn:
-        print_transaction_group(
-            "TRUE NEGATIVE  — Benar dideteksi normal",
-            "✔️ ", "(model benar, transaksi memang normal)", "TN"
-        )
+        print_transaction_group("TRUE NEGATIVE  — Benar dideteksi normal", "✔️ ", "(model benar, transaksi memang normal)", "TN")
     else:
         tn_count = len(df_valid[df_valid["result_type"] == "TN"])
-        print(f"\n  ✔️  TRUE NEGATIVE (TN) — {tn_count} transaksi  (disembunyikan, pakai tanpa --hide-tn untuk tampilkan)")
+        print(f"\n  ✔️  TRUE NEGATIVE (TN) — {tn_count} transaksi  (disembunyikan)")
 
     print(f"\n  💡 Catatan interpretasi untuk data kecil:")
     print(f"     - FP tinggi wajar terjadi saat data < 200 transaksi")
-    print(f"       karena model belum cukup belajar pola 'normal' user")
-    print(f"     - Coba retrain setelah data bertambah, lalu jalankan")
-    print(f"       evaluate lagi untuk melihat perbaikan precision")
-    print(f"     - Untuk paper, laporkan juga jumlah data training sebagai")
-    print(f"       variabel yang mempengaruhi hasil")
+    print(f"     - Coba retrain setelah data bertambah untuk melihat perbaikan precision")
+    print(f"     - Laporkan juga jumlah data training sebagai variabel yang mempengaruhi hasil")
 
     print(f"\n{'─'*60}")
     print(f"  LATENCY (per transaksi)")
@@ -374,16 +504,44 @@ def evaluate(user_id: int, k: float = 2.0, output_path: str = None,
     print(f"  Pseudo-label k               : {k} (mean + {k}σ)")
     print(f"{'─'*60}\n")
 
-    # ── 7. Simpan hasil ke JSON (opsional) ────────────────
-    def df_to_records(result_type: str):
+    # ── 7. Generate plots (jika --plot) ───────────────────
+    if plot and roc_auc:
+        os.makedirs(plot_dir, exist_ok=True)
+        print(f"🎨 Generating plots → {plot_dir}/")
+
+        roc_path  = os.path.join(plot_dir, f"roc_curve_user{user_id}.png")
+        dist_path = os.path.join(plot_dir, f"score_distribution_user{user_id}.png")
+
+        plot_roc_curve(
+            true_labels      = true_labels_valid,
+            scores           = scores_valid,
+            anomaly_threshold= anomaly_threshold,
+            output_path      = roc_path,
+            user_id          = user_id,
+            model_source     = model_source,
+            n_transactions   = int(valid_mask.sum())
+        )
+
+        plot_score_distribution(
+            scores           = scores_valid,
+            true_labels      = true_labels_valid,
+            anomaly_threshold= anomaly_threshold,
+            warning_threshold= warning_threshold,
+            output_path      = dist_path,
+            user_id          = user_id,
+            model_source     = model_source
+        )
+        print()
+
+    elif plot and not roc_auc:
+        print("⚠️  Plot tidak dapat di-generate karena ROC-AUC tidak tersedia.\n")
+
+    # ── 8. Simpan JSON (opsional) ──────────────────────────
+    def df_to_records(result_type):
         subset = df_valid[df_valid["result_type"] == result_type]
         return [
-            {
-                "timestamp": str(row["timestamp"])[:19],
-                "category" : row["category"],
-                "amount"   : row["amount"],
-                "score"    : round(float(row["score"]), 4),
-            }
+            {"timestamp": str(row["timestamp"])[:19], "category": row["category"],
+             "amount": row["amount"], "score": round(float(row["score"]), 4)}
             for _, row in subset.iterrows()
         ]
 
@@ -444,30 +602,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate Isolation Forest model for a specific user."
     )
-    parser.add_argument(
-        "--user_id", type=int, required=True,
-        help="User ID to evaluate (from database)"
-    )
-    parser.add_argument(
-        "--k", type=float, default=1.0,
-        help="Pseudo-label threshold multiplier: anomaly if amount > mean + k*std (default: 2.0)"
-    )
-    parser.add_argument(
-        "--anomaly_threshold", type=float, default=THRESHOLD_ANOMALY,
-        help=f"Score threshold for anomaly classification (default: {THRESHOLD_ANOMALY})"
-    )
-    parser.add_argument(
-        "--warning_threshold", type=float, default=THRESHOLD_WARNING,
-        help=f"Score threshold for warning classification (default: {THRESHOLD_WARNING})"
-    )
-    parser.add_argument(
-        "--output", type=str, default=None,
-        help="Optional path to save results as JSON (e.g. results.json)"
-    )
-    parser.add_argument(
-        "--hide-tn", action="store_true",
-        help="Hide True Negative detail (bisa sangat panjang kalau data besar)"
-    )
+    parser.add_argument("--user_id", type=int, required=True,
+                        help="User ID to evaluate (from database)")
+    parser.add_argument("--k", type=float, default=1.0,
+                        help="Pseudo-label threshold: anomaly if amount > mean + k*std (default: 1.0)")
+    parser.add_argument("--anomaly_threshold", type=float, default=THRESHOLD_ANOMALY,
+                        help=f"Score threshold for anomaly classification (default: {THRESHOLD_ANOMALY})")
+    parser.add_argument("--warning_threshold", type=float, default=THRESHOLD_WARNING,
+                        help=f"Score threshold for warning classification (default: {THRESHOLD_WARNING})")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Optional path to save results as JSON (e.g. results.json)")
+    parser.add_argument("--hide-tn", action="store_true",
+                        help="Hide True Negative detail (bisa sangat panjang kalau data besar)")
+    parser.add_argument("--plot", action="store_true",
+                        help="Generate ROC curve + score distribution plots")
+    parser.add_argument("--plot_dir", type=str, default=".",
+                        help="Folder output untuk plots (default: current directory)")
 
     args = parser.parse_args()
 
@@ -478,4 +628,6 @@ if __name__ == "__main__":
         warning_threshold = args.warning_threshold,
         anomaly_threshold = args.anomaly_threshold,
         hide_tn           = args.hide_tn,
+        plot              = args.plot,
+        plot_dir          = args.plot_dir,
     )
