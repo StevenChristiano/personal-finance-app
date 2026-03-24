@@ -4,14 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { incomeApi, type Income } from "@/lib/api";
 import { Plus, Trash2, RefreshCw, TrendingUp, ChevronLeft, ChevronRight, ChevronDown, Repeat2 } from "lucide-react";
 
-const MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 function formatRupiah(amount: number) {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(amount);
 }
 function formatRupiahCompact(amount: number) {
     if (amount >= 1_000_000_000) return `Rp ${(amount / 1_000_000_000).toFixed(1)}M`;
-    if (amount >= 1_000_000)     return `Rp ${(amount / 1_000_000).toFixed(1)}jt`;
+    if (amount >= 1_000_000) return `Rp ${(amount / 1_000_000).toFixed(1)}jt`;
     return formatRupiah(amount);
 }
 
@@ -31,9 +31,9 @@ export default function IncomePage() {
     const today = new Date();
 
     const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
-    const [viewYear,  setViewYear]  = useState(today.getFullYear());
-    const [showPicker,  setShowPicker]  = useState(false);
-    const [pickerYear,  setPickerYear]  = useState(today.getFullYear());
+    const [viewYear, setViewYear] = useState(today.getFullYear());
+    const [showPicker, setShowPicker] = useState(false);
+    const [pickerYear, setPickerYear] = useState(today.getFullYear());
     const pickerRef = useRef<HTMLDivElement>(null);
 
     // Close picker on outside click
@@ -61,19 +61,19 @@ export default function IncomePage() {
         else setViewMonth(m => m + 1);
     };
 
-    const [incomes, setIncomes]       = useState<Income[]>([]);
-    const [loading, setLoading]       = useState(true);
+    const [incomes, setIncomes] = useState<Income[]>([]);
+    const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
-    const [showForm, setShowForm]     = useState(false);
-    const [summary, setSummary]       = useState<Summary | null>(null);
-    const [sources, setSources]       = useState<string[]>([]);
+    const [showForm, setShowForm] = useState(false);
+    const [summary, setSummary] = useState<Summary | null>(null);
+    const [sources, setSources] = useState<string[]>([]);
     const [togglingId, setTogglingId] = useState<number | null>(null);
 
-    const [amountRaw,     setAmountRaw]     = useState("");
+    const [amountRaw, setAmountRaw] = useState("");
     const [amountDisplay, setAmountDisplay] = useState("");
-    const [source,       setSource]       = useState("");
-    const [date,         setDate]         = useState(today.toISOString().slice(0, 10));
-    const [isRecurring,  setIsRecurring]  = useState(false);
+    const [source, setSource] = useState("");
+    const [date, setDate] = useState(today.toISOString().slice(0, 10));
+    const [isRecurring, setIsRecurring] = useState(false);
 
     const fetchIncomes = async () => {
         setLoading(true);
@@ -130,9 +130,9 @@ export default function IncomePage() {
         setSubmitting(true);
         try {
             await incomeApi.create({
-                amount      : parseFloat(amountRaw),
+                amount: parseFloat(amountRaw),
                 source,
-                date        : new Date(date).toISOString(),
+                date: new Date(date).toISOString(),
                 is_recurring: isRecurring,
             });
             setAmountRaw(""); setAmountDisplay(""); setSource("");
@@ -168,17 +168,17 @@ export default function IncomePage() {
     }
 
     return (
-        <div className="p-8 mx-auto">
+        <div className="p-4 md:p-8 mx-auto">
 
             {/* Header */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-[#1A1A1A]">Income</h1>
                     <p className="text-[#6B7280] text-sm mt-0.5">{monthLabel}</p>
                 </div>
                 <button
                     onClick={() => setShowForm(v => !v)}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors"
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] w-full sm:w-auto transition-colors"
                 >
                     <Plus size={16} />Add Income
                 </button>
@@ -245,7 +245,7 @@ export default function IncomePage() {
                                 const isFuture = pickerYear > today.getFullYear() ||
                                     (pickerYear === today.getFullYear() && m > today.getMonth() + 1);
                                 const isSelected = m === viewMonth && pickerYear === viewYear;
-                                const isCurrent  = m === today.getMonth() + 1 && pickerYear === today.getFullYear();
+                                const isCurrent = m === today.getMonth() + 1 && pickerYear === today.getFullYear();
                                 return (
                                     <button
                                         key={m}
@@ -257,9 +257,9 @@ export default function IncomePage() {
                                         }}
                                         className={`py-2 rounded-xl text-xs font-semibold transition-all
                                             ${isFuture ? "opacity-25 cursor-not-allowed text-[#9CA3AF]" :
-                                              isSelected ? "bg-[#1A1A1A] text-white" :
-                                              isCurrent  ? "bg-[#F0FDF4] text-[#16A34A] border border-[#BBF7D0]" :
-                                                           "text-[#374151] hover:bg-[#F3F4F6]"
+                                                isSelected ? "bg-[#1A1A1A] text-white" :
+                                                    isCurrent ? "bg-[#F0FDF4] text-[#16A34A] border border-[#BBF7D0]" :
+                                                        "text-[#374151] hover:bg-[#F3F4F6]"
                                             }`}
                                     >
                                         {name.slice(0, 3)}
@@ -272,7 +272,7 @@ export default function IncomePage() {
             </div>
 
             {/* Summary Stats — 3 cards */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
                 {/* Monthly */}
                 <div className="bg-[#F0FDF4] border border-[#BBF7D0] rounded-2xl p-4">
                     <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide mb-1">This Month</p>
@@ -350,7 +350,7 @@ export default function IncomePage() {
                         </div>
 
                         {/* Source — datalist combo (free text + suggestions) */}
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs text-[#6B7280] font-bold uppercase tracking-wider block mb-1.5">
                                     Source / Label
@@ -451,11 +451,10 @@ export default function IncomePage() {
                                         onClick={() => handleToggleRecurring(income.id)}
                                         disabled={togglingId === income.id}
                                         title={income.is_recurring ? "Click to stop recurring" : "Click to make recurring"}
-                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
-                                            income.is_recurring
-                                                ? "bg-[#EEF2FF] text-[#4F46E5] hover:bg-[#E0E7FF]"
-                                                : "bg-[#F3F4F6] text-[#9CA3AF] hover:bg-[#E5E7EB] opacity-0 group-hover:opacity-100"
-                                        }`}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold transition-all ${income.is_recurring
+                                            ? "bg-[#EEF2FF] text-[#4F46E5] hover:bg-[#E0E7FF]"
+                                            : "bg-[#F3F4F6] text-[#9CA3AF] hover:bg-[#E5E7EB] opacity-0 group-hover:opacity-100"
+                                            }`}
                                     >
                                         {togglingId === income.id
                                             ? <RefreshCw size={11} className="animate-spin" />

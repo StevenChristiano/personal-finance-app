@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Wallet, TrendingUp, List, Plus, Settings, LogOut, DollarSign } from "lucide-react";
+import { Wallet, TrendingUp, List, Plus, Settings, LogOut, DollarSign, Menu, X } from "lucide-react";
 
 const NAV_ITEMS = [
     { href: "/dashboard", Icon: TrendingUp, label: "Dashboard" },
@@ -17,12 +17,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const [user, setUser] = useState<{ name: string } | null>(null);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     useEffect(() => {
         const stored = localStorage.getItem("user");
         if (!stored) { router.push("/login"); return; }
         setUser(JSON.parse(stored));
     }, [router]);
+
+    // Close mobile menu on route change
+    useEffect(() => {
+        setIsMobileMenuOpen(false);
+    }, [pathname]);
 
     const handleLogout = () => {
         localStorage.removeItem("token");
@@ -32,10 +38,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-[#F7F7F5]">
+            {/* ── Mobile Header ── */}
+            <div className="md:hidden sticky top-0 z-20 bg-white border-b border-[#EBEBEB] px-4 py-3 flex items-center gap-3">
+                <button
+                    onClick={() => setIsMobileMenuOpen(true)}
+                    className="p-1.5 -ml-1.5 rounded-lg text-[#1A1A1A] hover:bg-[#F3F4F6] transition-colors"
+                >
+                    <Menu size={22} />
+                </button>
+                <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-[#1A1A1A] flex items-center justify-center">
+                        <Wallet size={12} color="white" />
+                    </div>
+                    <span className="font-bold text-[#1A1A1A] text-base" style={{ fontFamily: "Georgia, serif" }}>
+                        SpendIt
+                    </span>
+                </div>
+            </div>
+
+            {/* ── Mobile Menu Backdrop ── */}
+            {isMobileMenuOpen && (
+                <div
+                    className="fixed inset-0 bg-black/40 z-30 md:hidden transition-opacity"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                />
+            )}
+
             {/* ── Sidebar ── */}
-            <aside className="fixed left-0 top-0 h-full w-56 bg-white border-r border-[#EBEBEB] flex flex-col z-10">
+            <aside className={`fixed left-0 top-0 h-full w-64 md:w-56 bg-white border-r border-[#EBEBEB] flex flex-col z-40 transition-transform duration-300 ease-in-out
+                ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
+            `}>
                 {/* Logo */}
-                <div className="p-6 border-b border-[#EBEBEB]">
+                <div className="p-6 border-b border-[#EBEBEB] flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-lg bg-[#1A1A1A] flex items-center justify-center">
                             <Wallet size={14} color="white" />
@@ -44,6 +78,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             SpendIt
                         </span>
                     </div>
+                    <button
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="md:hidden p-1 rounded-lg text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#1A1A1A]"
+                    >
+                        <X size={20} />
+                    </button>
                 </div>
 
                 {/* Nav */}
@@ -75,7 +115,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* ── Page Content ── */}
-            <main className="ml-56 h-screen overflow-y-auto">
+            <main className="md:ml-56 min-h-screen">
                 {children}
             </main>
         </div>
