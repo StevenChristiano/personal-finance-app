@@ -89,7 +89,7 @@ export default function SettingsPage() {
     };
 
     return (
-        <div className="p-8">
+        <div className="p-4 md:p-8">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-2xl font-bold text-[#1A1A1A]">Settings</h1>

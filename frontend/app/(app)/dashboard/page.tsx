@@ -25,13 +25,13 @@ function formatRupiah(amount: number) {
 }
 function formatRupiahShort(amount: number) {
     if (amount >= 1_000_000) return `Rp ${(amount / 1_000_000).toFixed(1)}jt`;
-    if (amount >= 1_000)     return `Rp ${(amount / 1_000).toFixed(0)}rb`;
+    if (amount >= 1_000) return `Rp ${(amount / 1_000).toFixed(0)}rb`;
     return `Rp ${amount}`;
 }
 function formatLastTrained(dateStr: string) {
     const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (diff < 1)    return "just now";
-    if (diff < 60)   return `${diff}m ago`;
+    if (diff < 1) return "just now";
+    if (diff < 60) return `${diff}m ago`;
     if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
     return `${Math.floor(diff / 1440)}d ago`;
 }
@@ -43,24 +43,24 @@ interface ModelStatus { status: string; message: string; transaction_count?: num
 const MONTHS_SHORT = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 
 export default function DashboardPage() {
-    const [user, setUser]                   = useState<{ name: string } | null>(null);
-    const [stats, setStats]                 = useState<Stats | null>(null);
-    const [prevStats, setPrevStats]         = useState<Stats | null>(null);
+    const [user, setUser] = useState<{ name: string } | null>(null);
+    const [stats, setStats] = useState<Stats | null>(null);
+    const [prevStats, setPrevStats] = useState<Stats | null>(null);
     const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-    const [coldStart, setColdStart]         = useState<ColdStartStatus | null>(null);
-    const [modelStatus, setModelStatus]     = useState<ModelStatus | null>(null);
-    const [monthlyStats, setMonthlyStats]   = useState<MonthlyStats[]>([]);
-    const [loading, setLoading]             = useState(true);
-    const [retraining, setRetraining]       = useState(false);
+    const [coldStart, setColdStart] = useState<ColdStartStatus | null>(null);
+    const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+    const [monthlyStats, setMonthlyStats] = useState<MonthlyStats[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [retraining, setRetraining] = useState(false);
     const [retrainSuccess, setRetrainSuccess] = useState(false);
     const [lowDataCategories, setLowDataCategories] = useState<LowDataCategory[]>([]);
-    const [balance, setBalance]             = useState<Balance | null>(null);
+    const [balance, setBalance] = useState<Balance | null>(null);
 
-    const now       = new Date();
-    const month     = now.getMonth() + 1;
-    const year      = now.getFullYear();
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
     const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear  = month === 1 ? year - 1 : year;
+    const prevYear = month === 1 ? year - 1 : year;
 
     useEffect(() => {
         const stored = localStorage.getItem("user");
@@ -93,7 +93,7 @@ export default function DashboardPage() {
         setRetraining(true); setRetrainSuccess(false); setLowDataCategories([]);
         try {
             const retrainData = await modelApi.retrain() as { low_data_categories?: LowDataCategory[] };
-            const modelData   = await modelApi.modelStatus();
+            const modelData = await modelApi.modelStatus();
             setModelStatus(modelData);
             setLowDataCategories(retrainData.low_data_categories || []);
             setRetrainSuccess(true);
@@ -121,9 +121,9 @@ export default function DashboardPage() {
     if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="text-[#6B7280] text-sm">Loading...</div></div>;
 
     return (
-        <div className="p-8">
+        <div className="p-4 md:p-8">
             {/* Header */}
-            <div className="mb-8 flex items-center justify-between">
+            <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-[#1A1A1A]">
                         Good {now.getHours() < 12 ? "Morning" : now.getHours() < 17 ? "Afternoon" : "Evening"}, {user?.name?.split(" ")[0]} 👋
@@ -132,7 +132,7 @@ export default function DashboardPage() {
                         {now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
                     </p>
                 </div>
-                <Link href="/add" className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors">
+                <Link href="/add" className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] w-full sm:w-auto transition-colors">
                     <Plus size={16} />Add Transaction
                 </Link>
             </div>
@@ -164,14 +164,13 @@ export default function DashboardPage() {
                     )}
                     {coldStart?.is_ready && (
                         <button onClick={handleRetrain} disabled={retraining}
-                            className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 ${
-                                retrainSuccess ? "bg-[#D1FAE5] text-[#065F46] border border-[#6EE7B7]"
+                            className={`ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 ${retrainSuccess ? "bg-[#D1FAE5] text-[#065F46] border border-[#6EE7B7]"
                                 : modelStatus.status === "personal" ? "bg-white border border-[#EBEBEB] text-[#6B7280] hover:border-[#1A1A1A] hover:text-[#1A1A1A]"
-                                : "bg-[#1A1A1A] text-white hover:bg-[#333]"}`}>
+                                    : "bg-[#1A1A1A] text-white hover:bg-[#333]"}`}>
                             {retrainSuccess ? <>✓ Model Updated</>
                                 : retraining ? <><RefreshCw size={12} className="animate-spin" />Training...</>
-                                : modelStatus.status === "personal" ? <><RefreshCw size={12} />Retrain Model</>
-                                : <><Sparkles size={12} />Personalize Now</>}
+                                    : modelStatus.status === "personal" ? <><RefreshCw size={12} />Retrain Model</>
+                                        : <><Sparkles size={12} />Personalize Now</>}
                         </button>
                     )}
                 </div>
@@ -203,7 +202,7 @@ export default function DashboardPage() {
             )}
 
             {/* Stat Cards Row 1 */}
-            <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className={`rounded-2xl p-5 border ${(balance?.monthly_balance ?? 0) >= 0 ? "bg-[#F0FDF4] border-[#BBF7D0]" : "bg-[#FEF2F2] border-[#FECACA]"}`}>
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Monthly Balance</p>
@@ -227,8 +226,7 @@ export default function DashboardPage() {
                     </div>
                     <p className="text-2xl font-bold text-[#1A1A1A]">{formatRupiah(stats?.total_amount || 0)}</p>
                     {momChange !== null ? (
-                        <div className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                            momChange > 0 ? "bg-[#FEF2F2] text-[#DC2626]" : momChange < 0 ? "bg-[#F0FDF4] text-[#16A34A]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
+                        <div className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${momChange > 0 ? "bg-[#FEF2F2] text-[#DC2626]" : momChange < 0 ? "bg-[#F0FDF4] text-[#16A34A]" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
                             {momChange > 0 ? <ArrowUp size={10} /> : momChange < 0 ? <ArrowDown size={10} /> : <Minus size={10} />}
                             {Math.abs(momChange).toFixed(1)}% vs {MONTHS_SHORT[prevMonth]}
                         </div>
@@ -239,7 +237,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Stat Cards Row 2 */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-white rounded-2xl p-5 border border-[#EBEBEB]">
                     <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Total Balance</p>
                     <p className={`text-2xl font-bold mt-1 ${(balance?.total_balance ?? 0) >= 0 ? "text-[#1A1A1A]" : "text-[#DC2626]"}`}>{formatRupiah(balance?.total_balance || 0)}</p>
@@ -258,7 +256,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Charts Row */}
-            <div className="grid grid-cols-2 gap-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 {/* Pie Chart */}
                 <div className="bg-white rounded-2xl border border-[#EBEBEB] p-6">
                     <h3 className="text-sm font-semibold text-[#1A1A1A] mb-4">Spending by Category</h3>
@@ -321,7 +319,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Anomaly + Recent */}
-            <div className="grid grid-cols-2 gap-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5">
                     <div className="flex items-center gap-2 mb-3">
                         <Bell size={15} className="text-[#DC2626]" />

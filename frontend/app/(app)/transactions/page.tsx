@@ -25,21 +25,21 @@ function formatDate(ts: string) {
 
 export default function TransactionsPage() {
     const now = new Date();
-    const [month, setMonth]               = useState(now.getMonth() + 1);
-    const [year, setYear]                 = useState(now.getFullYear());
+    const [month, setMonth] = useState(now.getMonth() + 1);
+    const [year, setYear] = useState(now.getFullYear());
     const [transactions, setTransactions] = useState<Transaction[]>([]);
-    const [loading, setLoading]           = useState(true);
-    const [deletingId, setDeletingId]     = useState<number | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [deletingId, setDeletingId] = useState<number | null>(null);
     const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
     const [selectedCategory, setSelectedCategory] = useState<string>("all");
-    const [sortKey, setSortKey]           = useState<string>("timestamp");
-    const [sortDir, setSortDir]           = useState<"asc" | "desc">("desc");
-    const [showPicker, setShowPicker]     = useState(false);
-    const [pickerYear, setPickerYear]     = useState(now.getFullYear());
+    const [sortKey, setSortKey] = useState<string>("timestamp");
+    const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+    const [showPicker, setShowPicker] = useState(false);
+    const [pickerYear, setPickerYear] = useState(now.getFullYear());
 
     // Pagination
-    const [pageSize, setPageSize]         = useState(10);
-    const [currentPage, setCurrentPage]   = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [currentPage, setCurrentPage] = useState(1);
 
     const pickerRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
@@ -94,9 +94,9 @@ export default function TransactionsPage() {
         else setMonth(m => m + 1);
     };
 
-    const totalAmount    = transactions.reduce((sum, t) => sum + t.amount, 0);
-    const anomalyCount   = transactions.filter(t => t.anomaly_status === "anomaly").length;
-    const warningCount   = transactions.filter(t => t.anomaly_status === "warning").length;
+    const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
+    const anomalyCount = transactions.filter(t => t.anomaly_status === "anomaly").length;
+    const warningCount = transactions.filter(t => t.anomaly_status === "warning").length;
     const availableCategories = Array.from(new Set(transactions.map(t => t.category_name))).sort();
 
     const filteredTransactions = selectedCategory === "all"
@@ -104,7 +104,7 @@ export default function TransactionsPage() {
         : transactions.filter(t => t.category_name === selectedCategory);
 
     const filteredAnomalies = filteredTransactions.filter(t => t.anomaly_status === "anomaly").length;
-    const filteredWarnings  = filteredTransactions.filter(t => t.anomaly_status === "warning").length;
+    const filteredWarnings = filteredTransactions.filter(t => t.anomaly_status === "warning").length;
 
     const handleSort = (key: string) => {
         if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -119,49 +119,51 @@ export default function TransactionsPage() {
     const statusOrder = { anomaly: 2, warning: 1, normal: 0 };
     const sortedTransactions = [...filteredTransactions].sort((a, b) => {
         let va: string | number = 0, vb: string | number = 0;
-        if (sortKey === "category")  { va = a.category_name; vb = b.category_name; }
-        if (sortKey === "note")      { va = a.note || ""; vb = b.note || ""; }
+        if (sortKey === "category") { va = a.category_name; vb = b.category_name; }
+        if (sortKey === "note") { va = a.note || ""; vb = b.note || ""; }
         if (sortKey === "timestamp") { va = a.timestamp; vb = b.timestamp; }
-        if (sortKey === "amount")    { va = a.amount; vb = b.amount; }
-        if (sortKey === "status")    { va = statusOrder[a.anomaly_status as keyof typeof statusOrder] ?? -1; vb = statusOrder[b.anomaly_status as keyof typeof statusOrder] ?? -1; }
-        if (sortKey === "score")     { va = a.anomaly_score ?? -1; vb = b.anomaly_score ?? -1; }
+        if (sortKey === "amount") { va = a.amount; vb = b.amount; }
+        if (sortKey === "status") { va = statusOrder[a.anomaly_status as keyof typeof statusOrder] ?? -1; vb = statusOrder[b.anomaly_status as keyof typeof statusOrder] ?? -1; }
+        if (sortKey === "score") { va = a.anomaly_score ?? -1; vb = b.anomaly_score ?? -1; }
         if (va < vb) return sortDir === "asc" ? -1 : 1;
         if (va > vb) return sortDir === "asc" ? 1 : -1;
         return 0;
     });
 
     // Pagination
-    const totalPages   = Math.max(1, Math.ceil(sortedTransactions.length / pageSize));
-    const pagedData    = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-    const startIndex   = (currentPage - 1) * pageSize + 1;
-    const endIndex     = Math.min(currentPage * pageSize, sortedTransactions.length);
+    const totalPages = Math.max(1, Math.ceil(sortedTransactions.length / pageSize));
+    const pagedData = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    const startIndex = (currentPage - 1) * pageSize + 1;
+    const endIndex = Math.min(currentPage * pageSize, sortedTransactions.length);
 
     const getStatusBadge = (status?: string) => {
         if (status === "anomaly") return <span className="flex items-center gap-1 text-xs font-medium text-[#DC2626] bg-[#FEF2F2] px-2 py-0.5 rounded-full"><AlertCircle size={10} />Anomaly</span>;
         if (status === "warning") return <span className="flex items-center gap-1 text-xs font-medium text-[#D97706] bg-[#FFFBEB] px-2 py-0.5 rounded-full"><AlertTriangle size={10} />Warning</span>;
-        if (status === "normal")  return <span className="flex items-center gap-1 text-xs font-medium text-[#16A34A] bg-[#F0FDF4] px-2 py-0.5 rounded-full"><CheckCircle size={10} />Normal</span>;
+        if (status === "normal") return <span className="flex items-center gap-1 text-xs font-medium text-[#16A34A] bg-[#F0FDF4] px-2 py-0.5 rounded-full"><CheckCircle size={10} />Normal</span>;
         return <span className="text-xs text-[#9CA3AF]">—</span>;
     };
 
     return (
-        <div className="p-8">
+        <div className="p-4 md:p-8">
             {/* Header */}
-            <div className="mb-6 flex items-center justify-between">
+            <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-[#1A1A1A]">Transactions</h1>
                     <p className="text-[#6B7280] text-sm mt-0.5">Track and manage your spending history</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <ExportButton month={month} year={year} />
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <div className="flex-1 sm:flex-none">
+                        <ExportButton month={month} year={year} />
+                    </div>
                     <Link href="/add"
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors">
-                        <Plus size={16} />Add Transaction
+                        className="flex-1 sm:flex-none justify-center flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A1A1A] text-white text-sm font-medium hover:bg-[#333] transition-colors">
+                        <Plus size={16} />Add
                     </Link>
                 </div>
             </div>
 
             {/* Stat Cards */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {[
                     { label: "Total Spent", value: formatRupiah(totalAmount), sub: `${transactions.length} transactions` },
                     {
@@ -227,7 +229,7 @@ export default function TransactionsPage() {
 
             {/* Category Filter Pills */}
             {!loading && availableCategories.length > 1 && (
-                <div className="flex gap-2 mb-4 flex-wrap">
+                <div className="flex gap-2 mb-4 flex-wrap overflow-x-auto pb-2 scrollbar-hide">
                     <button onClick={() => setSelectedCategory("all")}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${selectedCategory === "all"
                             ? "bg-[#1A1A1A] text-white border-[#1A1A1A]"
@@ -247,7 +249,7 @@ export default function TransactionsPage() {
 
             {/* Summary Pills */}
             {filteredTransactions.length > 0 && (
-                <div className="flex gap-3 mb-5">
+                <div className="flex flex-wrap gap-2 md:gap-3 mb-5">
                     <div className="px-3 py-1.5 rounded-full bg-white border border-[#EBEBEB] text-xs text-[#6B7280]">
                         <span className="font-semibold text-[#1A1A1A]">{filteredTransactions.length}</span> {selectedCategory === "all" ? "total" : selectedCategory}
                     </div>
@@ -290,12 +292,12 @@ export default function TransactionsPage() {
                     {/* Sticky Header */}
                     <div
                         ref={headerRef}
-                        className="grid grid-cols-12 px-5 py-3 bg-[#F9FAFB] border-b border-[#EBEBEB] text-xs font-medium text-[#6B7280] uppercase tracking-wide shadow-sm flex-shrink-0 rounded-t-2xl"
+                        className="hidden md:grid grid-cols-12 px-5 py-3 bg-[#F9FAFB] border-b border-[#EBEBEB] text-xs font-medium text-[#6B7280] uppercase tracking-wide shadow-sm flex-shrink-0 rounded-t-2xl"
                     >
                         {[
-                            { label: "Category",   key: "category",  span: "col-span-3" },
-                            { label: "Note",       key: "note",      span: "col-span-3" },
-                            { label: "Date & Time",key: "timestamp", span: "col-span-2" },
+                            { label: "Category", key: "category", span: "col-span-3" },
+                            { label: "Note", key: "note", span: "col-span-3" },
+                            { label: "Date & Time", key: "timestamp", span: "col-span-2" },
                         ].map(col => (
                             <button key={col.key} onClick={() => handleSort(col.key)}
                                 className={`${col.span} flex items-center hover:text-[#1A1A1A] transition-colors ${sortKey === col.key ? "text-[#1A1A1A]" : ""}`}>
@@ -320,44 +322,42 @@ export default function TransactionsPage() {
                     <div className="overflow-y-auto flex-1">
                         {/* Rows */}
                         {pagedData.map((t) => (
-                        <div key={t.id}
-                            className={`grid grid-cols-12 px-5 py-4 border-b border-[#F3F4F6] last:border-0 items-center hover:bg-[#FAFAFA] transition-colors group ${
-                                t.anomaly_status === "anomaly" ? "bg-[#FFF8F8]" :
-                                t.anomaly_status === "warning" ? "bg-[#FFFEF5]" : ""
-                            }`}>
-                            <div className="col-span-3 flex items-center gap-2.5">
-                                <span className="text-lg">{CATEGORY_ICONS[t.category_name] || "💳"}</span>
-                                <span className="text-sm font-medium text-[#1A1A1A]">{t.category_name}</span>
-                            </div>
-                            <div className="col-span-3">
-                                <span className="text-sm text-[#6B7280] truncate block">{t.note || "—"}</span>
-                            </div>
-                            <div className="col-span-2">
-                                <span className="text-xs text-[#9CA3AF]">{formatDate(t.timestamp)}</span>
-                            </div>
-                            <div className="col-span-2 text-right">
-                                <span className="text-sm font-semibold text-[#1A1A1A]">{formatRupiah(t.amount)}</span>
-                            </div>
-                            <div className="col-span-1 flex justify-center">
-                                {t.is_excluded ? <span className="text-xs text-[#D1D5DB]">—</span> : getStatusBadge(t.anomaly_status)}
-                            </div>
-                            <div className="col-span-1 flex items-center justify-center gap-2">
-                                {!t.is_excluded && t.anomaly_score != null ? (
-                                    <span className={`text-xs font-medium ${
-                                        t.anomaly_status === "anomaly" ? "text-[#DC2626]" :
-                                        t.anomaly_status === "warning" ? "text-[#D97706]" : "text-[#16A34A]"
+                            <div key={t.id}
+                                className={`grid grid-cols-12 px-5 py-4 border-b border-[#F3F4F6] last:border-0 items-center hover:bg-[#FAFAFA] transition-colors group ${t.anomaly_status === "anomaly" ? "bg-[#FFF8F8]" :
+                                    t.anomaly_status === "warning" ? "bg-[#FFFEF5]" : ""
                                     }`}>
-                                        {(t.anomaly_score * 100).toFixed(0)}%
-                                    </span>
-                                ) : (
-                                    <span className="text-xs text-[#D1D5DB]">—</span>
-                                )}
-                                <button onClick={() => setConfirmDelete(t.id)}
-                                    className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-[#FEF2F2] text-[#9CA3AF] hover:text-[#DC2626] transition-all">
-                                    <Trash2 size={13} />
-                                </button>
+                                <div className="col-span-3 flex items-center gap-2.5">
+                                    <span className="text-lg">{CATEGORY_ICONS[t.category_name] || "💳"}</span>
+                                    <span className="text-sm font-medium text-[#1A1A1A]">{t.category_name}</span>
+                                </div>
+                                <div className="col-span-3">
+                                    <span className="text-sm text-[#6B7280] truncate block">{t.note || "—"}</span>
+                                </div>
+                                <div className="col-span-2">
+                                    <span className="text-xs text-[#9CA3AF]">{formatDate(t.timestamp)}</span>
+                                </div>
+                                <div className="col-span-2 text-right">
+                                    <span className="text-sm font-semibold text-[#1A1A1A]">{formatRupiah(t.amount)}</span>
+                                </div>
+                                <div className="col-span-1 flex justify-center">
+                                    {t.is_excluded ? <span className="text-xs text-[#D1D5DB]">—</span> : getStatusBadge(t.anomaly_status)}
+                                </div>
+                                <div className="col-span-1 flex items-center justify-center gap-2">
+                                    {!t.is_excluded && t.anomaly_score != null ? (
+                                        <span className={`text-xs font-medium ${t.anomaly_status === "anomaly" ? "text-[#DC2626]" :
+                                            t.anomaly_status === "warning" ? "text-[#D97706]" : "text-[#16A34A]"
+                                            }`}>
+                                            {(t.anomaly_score * 100).toFixed(0)}%
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs text-[#D1D5DB]">—</span>
+                                    )}
+                                    <button onClick={() => setConfirmDelete(t.id)}
+                                        className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-[#FEF2F2] text-[#9CA3AF] hover:text-[#DC2626] transition-all">
+                                        <Trash2 size={13} />
+                                    </button>
+                                </div>
                             </div>
-                        </div>
                         ))}
                     </div>
 
@@ -371,11 +371,10 @@ export default function TransactionsPage() {
                                     <button
                                         key={size}
                                         onClick={() => setPageSize(size)}
-                                        className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                                            pageSize === size
-                                                ? "bg-[#1A1A1A] text-white"
-                                                : "bg-white border border-[#EBEBEB] text-[#6B7280] hover:border-[#9CA3AF]"
-                                        }`}
+                                        className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${pageSize === size
+                                            ? "bg-[#1A1A1A] text-white"
+                                            : "bg-white border border-[#EBEBEB] text-[#6B7280] hover:border-[#9CA3AF]"
+                                            }`}
                                     >
                                         {size}
                                     </button>
@@ -419,11 +418,10 @@ export default function TransactionsPage() {
                                         <button
                                             key={p}
                                             onClick={() => setCurrentPage(p as number)}
-                                            className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
-                                                currentPage === p
-                                                    ? "bg-[#1A1A1A] text-white"
-                                                    : "text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB]"
-                                            }`}
+                                            className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${currentPage === p
+                                                ? "bg-[#1A1A1A] text-white"
+                                                : "text-[#6B7280] hover:bg-white hover:border border-[#EBEBEB]"
+                                                }`}
                                         >
                                             {p}
                                         </button>
