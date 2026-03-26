@@ -288,6 +288,11 @@ export const incomeApi = {
         const res = await api.get(`/balance${params}`);
         return res.data;
     },
+    
+    getMonthlyBalance: async (): Promise<{ month: number; year: number; label: string; income: number; spent: number; balance: number; }[]> => {
+    const res = await api.get("/balance/monthly");
+    return res.data;
+},
 };
 
 // ============================================================
