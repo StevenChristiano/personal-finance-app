@@ -46,3 +46,78 @@ def get_balance(
         "month"          : m,
         "year"           : y,
     }
+
+
+@router.get("/balance/monthly")
+def get_monthly_balance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Return income, spent, balance per bulan dari bulan pertama ada data hingga sekarang.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Cari tanggal transaksi/income paling awal
+    earliest_tx = db.query(Transaction).filter(
+        Transaction.user_id == current_user.id,
+        Transaction.is_excluded == False,
+    ).order_by(Transaction.timestamp.asc()).first()
+
+    earliest_inc = db.query(Income).filter(
+        Income.user_id == current_user.id,
+        Income.is_manually_deleted == False,
+    ).order_by(Income.date.asc()).first()
+
+    # Tentukan titik awal
+    candidates = []
+    if earliest_tx:  candidates.append(earliest_tx.timestamp)
+    if earliest_inc: candidates.append(earliest_inc.date)
+
+    if not candidates:
+        return []
+
+    earliest = min(candidates)
+    start_month, start_year = earliest.month, earliest.year
+    cur_month,   cur_year   = start_month, start_year
+
+    result = []
+    while (cur_year, cur_month) <= (now.year, now.month):
+        last_day = calendar.monthrange(cur_year, cur_month)[1]
+        m_start  = datetime(cur_year, cur_month, 1)
+        m_end    = datetime(cur_year, cur_month, last_day, 23, 59, 59)
+
+        monthly_incomes = db.query(Income).filter(
+            Income.user_id == current_user.id,
+            Income.is_manually_deleted == False,
+            Income.date >= m_start,
+            Income.date <= m_end,
+        ).all()
+
+        monthly_transactions = db.query(Transaction).filter(
+            Transaction.user_id == current_user.id,
+            Transaction.is_excluded == False,
+            Transaction.timestamp >= m_start,
+            Transaction.timestamp <= m_end,
+        ).all()
+
+        income  = sum(i.amount for i in monthly_incomes)
+        spent   = sum(t.amount for t in monthly_transactions)
+        balance = income - spent
+
+        result.append({
+            "month"  : cur_month,
+            "year"   : cur_year,
+            "label"  : datetime(cur_year, cur_month, 1).strftime("%b %Y"),
+            "income" : income,
+            "spent"  : spent,
+            "balance": balance,
+        })
+
+        cur_month += 1
+        if cur_month > 12:
+            cur_month = 1
+            cur_year += 1
+
+    # Return terbaru dulu
+    return list(reversed(result))

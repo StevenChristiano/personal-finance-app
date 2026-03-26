@@ -14,10 +14,16 @@ Cara pakai:
     python evaluate.py --user_id 1 --output hasil_evaluasi.json
     python evaluate.py --user_id 1 --plot                          ← generate semua plot
     python evaluate.py --user_id 1 --plot --plot_dir hasil_plot/   ← custom output folder
+    python evaluate.py --user_id 1 --force_global                  ← paksa pakai global model
+    python evaluate.py --user_id 1 --force_global --plot           ← global model + plots
+
+Perbandingan personal vs global (same user, same data):
+    python evaluate.py --user_id 1 --k 1.0 --plot --plot_dir hasil_plot/
+    python evaluate.py --user_id 1 --k 1.0 --force_global --plot --plot_dir hasil_plot/
 
 Plot yang di-generate (jika --plot):
-    roc_curve.png          ← ROC Curve dengan AUC score
-    score_distribution.png ← Distribusi anomaly score normal vs anomali
+    roc_curve_user{id}_{model}.png          ← ROC Curve dengan AUC score
+    score_distribution_user{id}_{model}.png ← Distribusi anomaly score normal vs anomali
 
 Referensi pendekatan pseudo-labeling:
     Liu, F.T., Ting, K.M., & Zhou, Z.H. (2008). Isolation Forest.
@@ -66,8 +72,33 @@ COLOR_ANOMALY  = "#EF4444"
 # ============================================================
 # HELPER: Load model dari DB atau global
 # ============================================================
-def load_model_for_user(user_id: int, db: Session):
-    """Load personal model jika ada, fallback ke global model."""
+def load_model_for_user(user_id: int, db: Session, force_global: bool = False):
+    """
+    Load model untuk evaluasi.
+
+    force_global=False (default) : load personal model jika ada, fallback ke global
+    force_global=True            : selalu pakai global model, abaikan personal model
+                                   → digunakan untuk perbandingan personal vs global
+    """
+    def _load_global():
+        try:
+            with open(f"{MODEL_DIR}/isolation_forest.pkl", "rb") as f:
+                model = pickle.load(f)
+            with open(f"{MODEL_DIR}/scaler.pkl", "rb") as f:
+                scaler = pickle.load(f)
+            with open(f"{MODEL_DIR}/encoder.pkl", "rb") as f:
+                encoder = pickle.load(f)
+            with open(f"{MODEL_DIR}/norm_params.pkl", "rb") as f:
+                norm_params = pickle.load(f)
+            return model, scaler, encoder, norm_params
+        except FileNotFoundError:
+            raise RuntimeError("Global model tidak ditemukan. Jalankan train.py terlebih dahulu.")
+
+    if force_global:
+        model, scaler, encoder, norm_params = _load_global()
+        print("🌐 Global model loaded (--force_global aktif, personal model diabaikan)")
+        return model, scaler, encoder, norm_params, "global"
+
     user_model_row = db.query(UserModel).filter(
         UserModel.user_id == user_id,
         UserModel.is_trained == True
@@ -82,20 +113,9 @@ def load_model_for_user(user_id: int, db: Session):
         print(f"✅ Personal model loaded (trained on {user_model_row.transaction_count} transactions)")
         return model, scaler, encoder, norm_params, source
 
-    try:
-        with open(f"{MODEL_DIR}/isolation_forest.pkl", "rb") as f:
-            model = pickle.load(f)
-        with open(f"{MODEL_DIR}/scaler.pkl", "rb") as f:
-            scaler = pickle.load(f)
-        with open(f"{MODEL_DIR}/encoder.pkl", "rb") as f:
-            encoder = pickle.load(f)
-        with open(f"{MODEL_DIR}/norm_params.pkl", "rb") as f:
-            norm_params = pickle.load(f)
-        source = "global"
-        print("⚠️  Personal model not found. Using global model.")
-        return model, scaler, encoder, norm_params, source
-    except FileNotFoundError:
-        raise RuntimeError("No model available. Run train.py first or retrain via /retrain endpoint.")
+    model, scaler, encoder, norm_params = _load_global()
+    print("⚠️  Personal model not found. Using global model.")
+    return model, scaler, encoder, norm_params, "global"
 
 
 # ============================================================
@@ -325,7 +345,8 @@ def evaluate(user_id: int, k: float = 1.0, output_path: str = None,
              anomaly_threshold: float = THRESHOLD_ANOMALY,
              hide_tn: bool = False,
              plot: bool = False,
-             plot_dir: str = "."):
+             plot_dir: str = ".",
+             force_global: bool = False):
 
     init_db()
     db: Session = next(get_db())
@@ -334,6 +355,7 @@ def evaluate(user_id: int, k: float = 1.0, output_path: str = None,
     print(f"  EVALUATION — User ID: {user_id}")
     print(f"  Pseudo-label threshold: mean + {k}σ per category")
     print(f"  Anomaly score threshold: {anomaly_threshold}")
+    print(f"  Model mode            : {'GLOBAL (forced)' if force_global else 'auto (personal → global fallback)'}")
     print(f"{'='*60}\n")
 
     # ── 1. Load transaksi user ─────────────────────────────
@@ -361,7 +383,7 @@ def evaluate(user_id: int, k: float = 1.0, output_path: str = None,
     print(f"📦 Categories found          : {df['category'].nunique()} ({', '.join(df['category'].unique())})\n")
 
     # ── 2. Load model ──────────────────────────────────────
-    model, scaler, encoder, norm_params, model_source = load_model_for_user(user_id, db)
+    model, scaler, encoder, norm_params, model_source = load_model_for_user(user_id, db, force_global=force_global)
 
     # ── 3. Pseudo-labels ───────────────────────────────────
     print(f"🏷️  Creating pseudo ground truth labels (k={k})...")
@@ -509,8 +531,8 @@ def evaluate(user_id: int, k: float = 1.0, output_path: str = None,
         os.makedirs(plot_dir, exist_ok=True)
         print(f"🎨 Generating plots → {plot_dir}/")
 
-        roc_path  = os.path.join(plot_dir, f"roc_curve_user{user_id}.png")
-        dist_path = os.path.join(plot_dir, f"score_distribution_user{user_id}.png")
+        roc_path  = os.path.join(plot_dir, f"roc_curve_user{user_id}_{model_source}.png")
+        dist_path = os.path.join(plot_dir, f"score_distribution_user{user_id}_{model_source}.png")
 
         plot_roc_curve(
             true_labels      = true_labels_valid,
@@ -619,6 +641,9 @@ if __name__ == "__main__":
     parser.add_argument("--plot_dir", type=str, default=".",
                         help="Folder output untuk plots (default: current directory)")
 
+    parser.add_argument("--force_global", action="store_true",
+                        help="Paksa pakai global model meskipun personal model tersedia (untuk perbandingan)")
+
     args = parser.parse_args()
 
     evaluate(
@@ -630,4 +655,5 @@ if __name__ == "__main__":
         hide_tn           = args.hide_tn,
         plot              = args.plot,
         plot_dir          = args.plot_dir,
+        force_global      = args.force_global,
     )

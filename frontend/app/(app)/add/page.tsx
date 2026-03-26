@@ -50,6 +50,7 @@ interface TransactionResult {
 export default function AddTransactionPage() {
     const [categories, setCategories] = useState<Category[]>([]);
     const [amount, setAmount] = useState("");
+    const [amountDisplay, setAmountDisplay] = useState("");
     const [categoryId, setCategoryId] = useState<number | null>(null);
     const [note, setNote] = useState("");
     const [timestamp, setTimestamp] = useState(makeDefaultTimestamp);
@@ -93,9 +94,15 @@ export default function AddTransactionPage() {
         fetchStats();
     }, []);
 
+    const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const raw = e.target.value.replace(/\D/g, "");
+        setAmount(raw);
+        setAmountDisplay(raw ? new Intl.NumberFormat("id-ID").format(parseInt(raw)) : "");
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!categoryId) return;
+        if (!amount || !categoryId) return;
         setError("");
         setLoading(true);
         setResult(null);
@@ -110,6 +117,7 @@ export default function AddTransactionPage() {
             fetchStats(); // Refresh right-column stats
             // Reset form — date resets to now
             setAmount("");
+            setAmountDisplay("");
             setNote("");
             setCategoryId(null);
             setTimestamp(makeDefaultTimestamp());
@@ -255,11 +263,14 @@ export default function AddTransactionPage() {
                                 <label className="block text-xs font-bold text-[#6B7280] uppercase tracking-wider mb-3">Amount (Rp)</label>
                                 <div className="relative group">
                                     <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[#9CA3AF] text-3xl font-bold transition-colors group-focus-within:text-[#1A1A1A]">Rp</span>
-                                    <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                                        placeholder="0" required min="1"
+                                    <input type="text" 
+                                        inputMode="numeric" 
+                                        value={amountDisplay} 
+                                        onChange={handleAmountChange}
+                                        placeholder="0" 
                                         className="w-full pl-16 pr-0 py-2 border-b-2 border-[#E5E7EB] bg-transparent text-[#1A1A1A] font-black text-5xl placeholder-[#D1D5DB] focus:outline-none focus:border-[#1A1A1A] transition-colors" />
                                 </div>
-                                {amount && <p className="text-xs font-bold text-[#9CA3AF] mt-3 tracking-wide">{formatRupiah(parseFloat(amount) || 0)}</p>}
+                                {amount && <p className="text-xs font-bold text-[#9CA3AF] mt-3 tracking-wide">{formatRupiah(parseInt(amount) || 0)}</p>}
                             </div>
 
                             {/* Wide Category Selector */}
@@ -306,7 +317,7 @@ export default function AddTransactionPage() {
                                 </div>
                             </div>
 
-                            <button type="submit" disabled={loading || !categoryId}
+                            <button type="submit" disabled={loading || !categoryId || !amount   }
                                 className="w-full md:w-auto px-10 py-4 rounded-xl bg-[#1A1A1A] text-white font-bold text-[15px] hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
                                 {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                                 {loading ? "Analyzing..." : "Save Transaction"}
