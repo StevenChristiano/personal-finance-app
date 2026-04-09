@@ -148,7 +148,7 @@ export default function TransactionsPage() {
             {/* Header */}
             <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-[#1A1A1A]">Transactions</h1>
+                    <h1 className="text-2xl font-bold text-[#1A1A1A]">Expenses</h1>
                     <p className="text-[#6B7280] text-sm mt-0.5">Track and manage your spending history</p>
                 </div>
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -165,9 +165,9 @@ export default function TransactionsPage() {
             {/* Stat Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 {[
-                    { label: "Total Spent", value: formatRupiah(totalAmount), sub: `${transactions.length} transactions` },
+                    { label: "Total Spent", value: formatRupiah(totalAmount), sub: `${transactions.length} expenses` },
                     {
-                        label: "Average / Transaction",
+                        label: "Average / Expenses",
                         value: formatRupiah(transactions.length > 0 ? totalAmount / transactions.length : 0),
                         sub: `${MONTHS[month - 1]} ${year}`,
                     },
@@ -195,7 +195,7 @@ export default function TransactionsPage() {
                     <p className="font-semibold text-[#1A1A1A] group-hover:text-[#6B7280] transition-colors underline-offset-2 group-hover:underline cursor-pointer">
                         {MONTHS[month - 1]} {year}
                     </p>
-                    <p className="text-xs text-[#9CA3AF] mt-0.5">{transactions.length} transactions · {formatRupiah(totalAmount)}</p>
+                    <p className="text-xs text-[#9CA3AF] mt-0.5">{transactions.length} expenses · {formatRupiah(totalAmount)}</p>
                 </button>
                 <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-[#F7F7F5] transition-colors">
                     <ChevronRight size={18} className="text-[#6B7280]" />

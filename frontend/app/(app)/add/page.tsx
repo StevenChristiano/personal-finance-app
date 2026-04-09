@@ -123,7 +123,7 @@ export default function AddTransactionPage() {
             setTimestamp(makeDefaultTimestamp());
             window.scrollTo({ top: 0, behavior: "smooth" });
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : "Failed to add transaction.");
+            setError(err instanceof Error ? err.message : "Failed to add Expenses.");
         } finally {
             setLoading(false);
         }
@@ -204,7 +204,7 @@ export default function AddTransactionPage() {
             {/* Header */}
             <div className="mb-6 flex items-start justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-[#1A1A1A]">Add Transaction</h1>
+                    <h1 className="text-2xl font-bold text-[#1A1A1A]">Add Expense</h1>
                     <p className="text-[#6B7280] text-sm mt-0.5">Record your spending and detect anomalies in real time</p>
                 </div>
             </div>
@@ -320,7 +320,7 @@ export default function AddTransactionPage() {
                             <button type="submit" disabled={loading || !categoryId || !amount   }
                                 className="w-full md:w-auto px-10 py-4 rounded-xl bg-[#1A1A1A] text-white font-bold text-[15px] hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3">
                                 {loading && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-                                {loading ? "Analyzing..." : "Save Transaction"}
+                                {loading ? "Analyzing..." : "Save Expense"}
                             </button>
                         </form>
                     </div>
@@ -333,7 +333,7 @@ export default function AddTransactionPage() {
                             </div>
                             <div>
                                 <h2 className="text-[15px] font-bold text-[#1A1A1A]">Bulk Upload via Excel</h2>
-                                <p className="text-[13px] text-[#6B7280] mt-0.5">Add multiple transactions at once — download the template, fill in your data, then upload.</p>
+                                <p className="text-[13px] text-[#6B7280] mt-0.5">Add multiple expenses at once — download the template, fill in your data, then upload.</p>
                             </div>
                         </div>
 
@@ -583,7 +583,7 @@ export default function AddTransactionPage() {
                                         <p className="text-3xl font-black text-[#1A1A1A] mt-1.5 tracking-tight">
                                             {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalSpend)}
                                         </p>
-                                        <p className="text-[11px] text-[#9CA3AF] font-bold mt-2 uppercase">{categoryStats.total_transactions} transactions</p>
+                                        <p className="text-[11px] text-[#9CA3AF] font-bold mt-2 uppercase">{categoryStats.total_transactions} expenses</p>
                                     </div>
                                     <div className="space-y-4">
                                         {sortedCats.slice(0, 5).map(([cat, stat]) => {

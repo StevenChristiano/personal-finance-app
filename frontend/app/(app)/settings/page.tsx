@@ -210,7 +210,7 @@ export default function SettingsPage() {
                                 </div>
                                 <p className="text-sm text-[#6B7280]">{modelStatus.message}</p>
                                 {modelStatus.transaction_count !== undefined && (
-                                    <p className="text-xs text-[#9CA3AF] mt-2">Trained on {modelStatus.transaction_count} transactions</p>
+                                    <p className="text-xs text-[#9CA3AF] mt-2">Trained on {modelStatus.transaction_count} expenses</p>
                                 )}
                                 {modelStatus.last_trained && (
                                     <p className="text-xs text-[#9CA3AF]">Last trained: {new Date(modelStatus.last_trained).toLocaleString()}</p>
