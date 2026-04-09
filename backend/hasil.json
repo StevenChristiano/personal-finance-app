@@ -1,0 +1,743 @@
+{
+  "meta": {
+    "user_id": 1,
+    "model_source": "personal",
+    "contamination": 0.0702,
+    "evaluated_at": "2026-03-17T03:49:38.416030+00:00",
+    "total_transactions": 116,
+    "valid_transactions": 116,
+    "skipped": 0,
+    "pseudo_label_k": 1.0,
+    "anomaly_threshold": 0.6,
+    "warning_threshold": 0.5,
+    "n_true_anomaly": 8,
+    "n_true_normal": 108
+  },
+  "metrics": {
+    "precision": 0.5,
+    "recall": 0.5,
+    "f1_score": 0.5,
+    "roc_auc": 0.9479,
+    "pr_auc": 0.5112,
+    "anomaly_rate": 0.069,
+    "warning_rate": 0.0086
+  },
+  "confusion_matrix": {
+    "TP": 4,
+    "TN": 104,
+    "FP": 4,
+    "FN": 4
+  },
+  "latency_ms": {
+    "mean": 16.5538,
+    "median": 15.8286,
+    "p95": 20.7558,
+    "p99": 25.6021
+  },
+  "transaction_details": {
+    "TP": [
+      {
+        "timestamp": "2024-01-15 02:00:00",
+        "category": "Entertainment",
+        "amount": 1500000.0,
+        "score": 0.9667
+      },
+      {
+        "timestamp": "2026-02-23 02:00:00",
+        "category": "Entertainment",
+        "amount": 1500000.0,
+        "score": 0.9667
+      },
+      {
+        "timestamp": "2026-02-10 09:10:00",
+        "category": "Utilities",
+        "amount": 149998.0,
+        "score": 0.6267
+      },
+      {
+        "timestamp": "2026-03-08 13:57:00",
+        "category": "Transport",
+        "amount": 222000.0,
+        "score": 0.6318
+      }
+    ],
+    "FP": [
+      {
+        "timestamp": "2026-03-12 16:17:00",
+        "category": "Telecommunication",
+        "amount": 825000.0,
+        "score": 0.6665
+      },
+      {
+        "timestamp": "2026-03-08 17:00:00",
+        "category": "Entertainment",
+        "amount": 250000.0,
+        "score": 0.6765
+      },
+      {
+        "timestamp": "2026-02-28 18:00:00",
+        "category": "Subscription",
+        "amount": 2000000.0,
+        "score": 1.0
+      },
+      {
+        "timestamp": "2026-02-03 21:00:00",
+        "category": "Utilities",
+        "amount": 100000.0,
+        "score": 0.607
+      }
+    ],
+    "FN": [
+      {
+        "timestamp": "2026-02-23 15:23:00",
+        "category": "Food",
+        "amount": 200000.0,
+        "score": 0.4936
+      },
+      {
+        "timestamp": "2026-03-14 10:03:00",
+        "category": "Food",
+        "amount": 121000.0,
+        "score": 0.3717
+      },
+      {
+        "timestamp": "2026-03-10 15:08:00",
+        "category": "Utilities",
+        "amount": 150000.0,
+        "score": 0.4732
+      },
+      {
+        "timestamp": "2026-03-06 19:15:00",
+        "category": "Transport",
+        "amount": 150000.0,
+        "score": 0.3665
+      }
+    ],
+    "TN": [
+      {
+        "timestamp": "2026-03-03 08:20:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0706
+      },
+      {
+        "timestamp": "2026-03-03 12:45:00",
+        "category": "Food",
+        "amount": 22000.0,
+        "score": 0.0163
+      },
+      {
+        "timestamp": "2026-03-03 18:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0834
+      },
+      {
+        "timestamp": "2026-03-03 20:00:00",
+        "category": "Food",
+        "amount": 35000.0,
+        "score": 0.1356
+      },
+      {
+        "timestamp": "2026-03-04 07:50:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.2864
+      },
+      {
+        "timestamp": "2026-03-04 12:10:00",
+        "category": "Food",
+        "amount": 28000.0,
+        "score": 0.0741
+      },
+      {
+        "timestamp": "2026-03-04 13:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.1055
+      },
+      {
+        "timestamp": "2026-03-04 17:15:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.0927
+      },
+      {
+        "timestamp": "2026-03-04 19:30:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0956
+      },
+      {
+        "timestamp": "2026-03-05 08:05:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.1711
+      },
+      {
+        "timestamp": "2026-03-05 12:30:00",
+        "category": "Food",
+        "amount": 45000.0,
+        "score": 0.116
+      },
+      {
+        "timestamp": "2026-03-05 17:50:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.071
+      },
+      {
+        "timestamp": "2026-03-07 19:30:00",
+        "category": "Food",
+        "amount": 40000.0,
+        "score": 0.0641
+      },
+      {
+        "timestamp": "2026-03-08 14:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.278
+      },
+      {
+        "timestamp": "2026-03-08 19:00:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0775
+      },
+      {
+        "timestamp": "2026-03-09 08:15:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.2046
+      },
+      {
+        "timestamp": "2026-03-09 12:00:00",
+        "category": "Food",
+        "amount": 22000.0,
+        "score": 0.063
+      },
+      {
+        "timestamp": "2026-02-08 20:00:00",
+        "category": "Subscription",
+        "amount": 54000.0,
+        "score": 0.3202
+      },
+      {
+        "timestamp": "2026-03-10 15:58:00",
+        "category": "Entertainment",
+        "amount": 100000.0,
+        "score": 0.3855
+      },
+      {
+        "timestamp": "2026-03-10 17:00:00",
+        "category": "Entertainment",
+        "amount": 40000.0,
+        "score": 0.3072
+      },
+      {
+        "timestamp": "2026-02-23 16:13:00",
+        "category": "Transport",
+        "amount": 20000.0,
+        "score": 0.2256
+      },
+      {
+        "timestamp": "2026-02-23 16:20:00",
+        "category": "Subscription",
+        "amount": 180000.0,
+        "score": 0.5736
+      },
+      {
+        "timestamp": "2026-02-24 10:52:00",
+        "category": "Transport",
+        "amount": 24997.0,
+        "score": 0.1938
+      },
+      {
+        "timestamp": "2026-02-24 11:30:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.0776
+      },
+      {
+        "timestamp": "2026-02-28 19:02:00",
+        "category": "Entertainment",
+        "amount": 150000.0,
+        "score": 0.4979
+      },
+      {
+        "timestamp": "2026-03-02 12:52:00",
+        "category": "Food",
+        "amount": 21000.0,
+        "score": 0.0789
+      },
+      {
+        "timestamp": "2026-03-02 20:55:00",
+        "category": "Transport",
+        "amount": 8998.0,
+        "score": 0.3615
+      },
+      {
+        "timestamp": "2026-03-01 08:15:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.4344
+      },
+      {
+        "timestamp": "2026-03-01 12:30:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.1254
+      },
+      {
+        "timestamp": "2026-03-01 17:45:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.2493
+      },
+      {
+        "timestamp": "2026-03-01 19:20:00",
+        "category": "Food",
+        "amount": 20000.0,
+        "score": 0.0816
+      },
+      {
+        "timestamp": "2026-03-02 08:10:00",
+        "category": "Transport",
+        "amount": 10000.0,
+        "score": 0.2824
+      },
+      {
+        "timestamp": "2026-03-02 12:15:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.0716
+      },
+      {
+        "timestamp": "2026-03-02 17:30:00",
+        "category": "Transport",
+        "amount": 10000.0,
+        "score": 0.1393
+      },
+      {
+        "timestamp": "2026-03-02 19:00:00",
+        "category": "Food",
+        "amount": 15000.0,
+        "score": 0.155
+      },
+      {
+        "timestamp": "2026-03-02 20:30:00",
+        "category": "Lifestyle",
+        "amount": 85000.0,
+        "score": 0.4312
+      },
+      {
+        "timestamp": "2026-03-06 20:30:00",
+        "category": "Telecommunication",
+        "amount": 50000.0,
+        "score": 0.3257
+      },
+      {
+        "timestamp": "2026-03-07 10:00:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.1834
+      },
+      {
+        "timestamp": "2026-03-07 15:00:00",
+        "category": "Transport",
+        "amount": 18000.0,
+        "score": 0.1822
+      },
+      {
+        "timestamp": "2026-03-08 11:00:00",
+        "category": "Food",
+        "amount": 35000.0,
+        "score": 0.1773
+      },
+      {
+        "timestamp": "2026-03-08 21:00:00",
+        "category": "Subscription",
+        "amount": 79000.0,
+        "score": 0.4898
+      },
+      {
+        "timestamp": "2026-03-10 13:38:00",
+        "category": "Entertainment",
+        "amount": 75000.0,
+        "score": 0.3507
+      },
+      {
+        "timestamp": "2026-02-01 18:59:00",
+        "category": "Entertainment",
+        "amount": 79000.0,
+        "score": 0.4325
+      },
+      {
+        "timestamp": "2026-03-05 19:45:00",
+        "category": "Food",
+        "amount": 20000.0,
+        "score": 0.0745
+      },
+      {
+        "timestamp": "2026-03-06 08:30:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.2151
+      },
+      {
+        "timestamp": "2026-03-06 12:15:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0772
+      },
+      {
+        "timestamp": "2026-03-06 17:20:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.0915
+      },
+      {
+        "timestamp": "2026-03-06 19:00:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.0587
+      },
+      {
+        "timestamp": "2026-03-07 16:00:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.1081
+      },
+      {
+        "timestamp": "2026-03-09 17:45:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0923
+      },
+      {
+        "timestamp": "2026-03-09 19:20:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0973
+      },
+      {
+        "timestamp": "2026-03-10 08:00:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.0783
+      },
+      {
+        "timestamp": "2026-03-10 12:30:00",
+        "category": "Food",
+        "amount": 50000.0,
+        "score": 0.0701
+      },
+      {
+        "timestamp": "2026-03-10 13:38:00",
+        "category": "Transport",
+        "amount": 25000.0,
+        "score": 0.1387
+      },
+      {
+        "timestamp": "2026-03-10 18:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0834
+      },
+      {
+        "timestamp": "2026-03-10 20:00:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.1211
+      },
+      {
+        "timestamp": "2026-02-05 20:30:00",
+        "category": "Telecommunication",
+        "amount": 54000.0,
+        "score": 0.3465
+      },
+      {
+        "timestamp": "2026-02-10 17:45:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0203
+      },
+      {
+        "timestamp": "2026-03-05 15:09:00",
+        "category": "Utilities",
+        "amount": 100000.0,
+        "score": 0.406
+      },
+      {
+        "timestamp": "2026-03-05 15:09:00",
+        "category": "Utilities",
+        "amount": 93000.0,
+        "score": 0.349
+      },
+      {
+        "timestamp": "2026-02-05 15:13:00",
+        "category": "Utilities",
+        "amount": 93000.0,
+        "score": 0.349
+      },
+      {
+        "timestamp": "2026-02-01 09:00:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.3106
+      },
+      {
+        "timestamp": "2026-02-01 13:00:00",
+        "category": "Food",
+        "amount": 35000.0,
+        "score": 0.1528
+      },
+      {
+        "timestamp": "2026-02-01 19:30:00",
+        "category": "Food",
+        "amount": 20000.0,
+        "score": 0.0816
+      },
+      {
+        "timestamp": "2026-02-01 20:00:00",
+        "category": "Lifestyle",
+        "amount": 34000.0,
+        "score": 0.2548
+      },
+      {
+        "timestamp": "2026-02-02 08:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.19
+      },
+      {
+        "timestamp": "2026-02-02 12:15:00",
+        "category": "Food",
+        "amount": 28000.0,
+        "score": 0.0606
+      },
+      {
+        "timestamp": "2026-02-02 17:30:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0923
+      },
+      {
+        "timestamp": "2026-02-02 19:15:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0973
+      },
+      {
+        "timestamp": "2026-02-03 08:10:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.0783
+      },
+      {
+        "timestamp": "2026-02-03 12:30:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.0
+      },
+      {
+        "timestamp": "2026-02-03 17:45:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.0426
+      },
+      {
+        "timestamp": "2026-02-03 19:00:00",
+        "category": "Food",
+        "amount": 20000.0,
+        "score": 0.0462
+      },
+      {
+        "timestamp": "2026-02-04 08:05:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.16
+      },
+      {
+        "timestamp": "2026-02-04 12:00:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0733
+      },
+      {
+        "timestamp": "2026-02-04 17:15:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0738
+      },
+      {
+        "timestamp": "2026-02-04 19:45:00",
+        "category": "Food",
+        "amount": 35000.0,
+        "score": 0.1247
+      },
+      {
+        "timestamp": "2026-02-05 08:20:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.1653
+      },
+      {
+        "timestamp": "2026-02-05 12:15:00",
+        "category": "Food",
+        "amount": 40000.0,
+        "score": 0.0997
+      },
+      {
+        "timestamp": "2026-02-05 13:00:00",
+        "category": "Transport",
+        "amount": 10000.0,
+        "score": 0.1533
+      },
+      {
+        "timestamp": "2026-02-05 17:50:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.0828
+      },
+      {
+        "timestamp": "2026-02-05 19:30:00",
+        "category": "Food",
+        "amount": 22000.0,
+        "score": 0.0682
+      },
+      {
+        "timestamp": "2026-02-06 08:10:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.2242
+      },
+      {
+        "timestamp": "2026-02-06 12:30:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.0869
+      },
+      {
+        "timestamp": "2026-02-06 17:40:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0791
+      },
+      {
+        "timestamp": "2026-02-06 19:15:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0576
+      },
+      {
+        "timestamp": "2026-02-07 10:30:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.1923
+      },
+      {
+        "timestamp": "2026-02-07 14:00:00",
+        "category": "Food",
+        "amount": 20000.0,
+        "score": 0.1411
+      },
+      {
+        "timestamp": "2026-02-07 16:00:00",
+        "category": "Transport",
+        "amount": 20000.0,
+        "score": 0.2062
+      },
+      {
+        "timestamp": "2026-02-07 19:00:00",
+        "category": "Food",
+        "amount": 50000.0,
+        "score": 0.0927
+      },
+      {
+        "timestamp": "2026-02-07 20:30:00",
+        "category": "Lifestyle",
+        "amount": 35000.0,
+        "score": 0.2137
+      },
+      {
+        "timestamp": "2026-02-08 11:00:00",
+        "category": "Food",
+        "amount": 35000.0,
+        "score": 0.1773
+      },
+      {
+        "timestamp": "2026-02-08 18:30:00",
+        "category": "Food",
+        "amount": 30000.0,
+        "score": 0.1012
+      },
+      {
+        "timestamp": "2026-02-09 08:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.19
+      },
+      {
+        "timestamp": "2026-03-10 15:24:00",
+        "category": "Lifestyle",
+        "amount": 40000.0,
+        "score": 0.2538
+      },
+      {
+        "timestamp": "2026-02-09 12:15:00",
+        "category": "Food",
+        "amount": 25000.0,
+        "score": 0.0612
+      },
+      {
+        "timestamp": "2026-02-09 15:00:00",
+        "category": "Transport",
+        "amount": 9000.0,
+        "score": 0.1908
+      },
+      {
+        "timestamp": "2026-02-09 17:30:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0923
+      },
+      {
+        "timestamp": "2026-02-09 19:30:00",
+        "category": "Food",
+        "amount": 20000.0,
+        "score": 0.1141
+      },
+      {
+        "timestamp": "2026-02-10 08:15:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0706
+      },
+      {
+        "timestamp": "2026-02-10 10:00:00",
+        "category": "Transport",
+        "amount": 12000.0,
+        "score": 0.1155
+      },
+      {
+        "timestamp": "2026-02-10 12:30:00",
+        "category": "Food",
+        "amount": 50000.0,
+        "score": 0.0701
+      },
+      {
+        "timestamp": "2026-02-10 14:00:00",
+        "category": "Transport",
+        "amount": 15000.0,
+        "score": 0.0538
+      },
+      {
+        "timestamp": "2026-02-10 19:20:00",
+        "category": "Food",
+        "amount": 32000.0,
+        "score": 0.0446
+      }
+    ]
+  }
+}

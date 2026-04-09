@@ -1,11 +1,23 @@
 from sqlalchemy import create_engine, Column, Integer, Float, String, DateTime, LargeBinary, Boolean, Text, ForeignKey
-from sqlalchemy.orm import sessionmaker, relationship, declarative_base
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
 from dotenv import load_dotenv
 from datetime import datetime
 import os
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
+
+USER = os.getenv("DB_USER")
+PASSWORD = os.getenv("DB_PASSWORD")
+HOST = os.getenv("DB_HOST")
+PORT = os.getenv("DB_PORT")
+DBNAME = os.getenv("DB_NAME")
+
+# local
+# DATABASE_URL = os.getenv("DATABASE_URL")
+
+# production
+DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

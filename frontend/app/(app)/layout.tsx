@@ -7,8 +7,8 @@ import { Wallet, TrendingUp, List, Plus, Settings, LogOut, DollarSign, Menu, X }
 
 const NAV_ITEMS = [
     { href: "/dashboard", Icon: TrendingUp, label: "Dashboard" },
-    { href: "/transactions", Icon: List, label: "Transactions" },
-    { href: "/add", Icon: Plus, label: "Add Transaction" },
+    { href: "/transactions", Icon: List, label: "Expenses" },
+    { href: "/add", Icon: Plus, label: "Add Expense" },
     { href: "/income", Icon: DollarSign, label: "Income" },
     { href: "/settings", Icon: Settings, label: "Settings" },
 ];

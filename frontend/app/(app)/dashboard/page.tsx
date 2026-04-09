@@ -262,7 +262,7 @@ export default function DashboardPage() {
                 <div className="bg-white rounded-2xl border border-[#EBEBEB] p-5">
                     <div className="flex items-center justify-between mb-3">
                         <div>
-                            <h3 className="text-sm font-semibold text-[#1A1A1A]">Recent Transactions</h3>
+                            <h3 className="text-sm font-semibold text-[#1A1A1A]">Recent Expenses</h3>
                             <p className="text-xs text-[#9CA3AF] mt-0.5">{MONTHS_ID[todayM]} {todayY}</p>
                         </div>
                         <Link href="/transactions" className="text-xs text-[#6B7280] hover:text-[#1A1A1A]">See more detail</Link>
@@ -396,7 +396,7 @@ export default function DashboardPage() {
                     <AlertTriangle size={18} className="text-[#F97316] mt-0.5 shrink-0" />
                     <div className="flex-1">
                         <p className="text-sm font-medium text-[#9A3412]">Building your personal model</p>
-                        <p className="text-xs text-[#C2410C] mt-0.5">{coldStart.total_transactions}/{coldStart.min_global} transactions. Using global model for now.</p>
+                        <p className="text-xs text-[#C2410C] mt-0.5">{coldStart.total_transactions}/{coldStart.min_global} expenses. Using global model for now.</p>
                         <div className="mt-2 h-1.5 bg-[#FED7AA] rounded-full overflow-hidden">
                             <div className="h-full bg-[#F97316] rounded-full" style={{ width: `${coldStart.progress_global}%` }} />
                         </div>
@@ -411,7 +411,7 @@ export default function DashboardPage() {
                         {modelStatus.status === "personal" ? "Personal Model Active" : "Global Model (Cold Start)"}
                     </span>
                     {modelStatus.status === "personal" && modelStatus.last_trained && (
-                        <span className="text-xs text-[#9CA3AF]">Last trained {formatLastTrained(modelStatus.last_trained)} · {modelStatus.transaction_count} transactions</span>
+                        <span className="text-xs text-[#9CA3AF]">Last trained {formatLastTrained(modelStatus.last_trained)} · {modelStatus.transaction_count} expenses</span>
                     )}
                     {coldStart?.is_ready && (
                         <button onClick={handleRetrain} disabled={retraining}
@@ -561,7 +561,7 @@ export default function DashboardPage() {
                     <p className="text-xs text-[#9CA3AF] mt-0.5">All time</p>
                 </div>
                 <div className="bg-white rounded-2xl p-5 border border-[#EBEBEB]">
-                    <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Avg / Transaction</p>
+                    <p className="text-xs text-[#6B7280] font-medium uppercase tracking-wide">Average / Expense</p>
                     <p className="text-2xl font-bold mt-1 text-[#1A1A1A]">{formatRupiah(stats?.average_amount || 0)}</p>
                     <p className="text-xs text-[#9CA3AF] mt-0.5">{monthLabel}</p>
                 </div>
