@@ -21,7 +21,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://spendit.vercel.app"  # nanti diupdate setelah dapat URL Vercel
+        "https://personal-finance-app.vercel.app"  # nanti diupdate setelah dapat URL Vercel
     ],
     allow_credentials=True,
     allow_methods=["*"],
