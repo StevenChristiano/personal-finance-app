@@ -7,17 +7,11 @@ import os
 
 load_dotenv()
 
-USER = os.getenv("DB_USER")
-PASSWORD = os.getenv("DB_PASSWORD")
-HOST = os.getenv("DB_HOST")
-PORT = os.getenv("DB_PORT")
-DBNAME = os.getenv("DB_NAME")
-
 # local
 # DATABASE_URL = os.getenv("DATABASE_URL")
 
 # production
-DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DBNAME}?sslmode=require"
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
