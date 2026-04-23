@@ -5,7 +5,6 @@ backend/venv/
 backend/.venv/
 
 # Model files (regenerate via train.py)
-backend/model/*.pkl
 backend/model/users/
 
 # Data files (regenerate via generate_data.py)
