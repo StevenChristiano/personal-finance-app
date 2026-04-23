@@ -213,7 +213,7 @@ export default function AddTransactionPage() {
             <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
 
                 {/* ── LEFT COLUMN: WORKSPACE ── */}
-                <div className="space-y-6">
+                <div className="space-y-6 min-w-0 overflow-hidden">
 
                     {/* Result Alert */}
                     {result && (() => {
@@ -396,7 +396,7 @@ export default function AddTransactionPage() {
                         const validCount = previewRows.filter((r) => r.errors.length === 0 && r.category_id !== null).length;
                         const invalidCount = previewRows.length - validCount;
                         return (
-                            <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden">
+                            <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden min-w-0">
                                 {/* Preview Header */}
                                 <div className="px-5 py-4 border-b border-[#F3F4F6] flex items-center justify-between gap-4 flex-wrap">
                                     <div className="flex items-center gap-3">
@@ -437,7 +437,7 @@ export default function AddTransactionPage() {
                                 </div>
 
                                 {/* Table */}
-                                <div className="overflow-auto max-h-130">
+                                <div className="overflow-auto max-h-13 w-full min-w-0">
                                     <table className="w-full text-sm border-collapse">
                                         <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#E5E7EB] z-10">
                                             <tr>
