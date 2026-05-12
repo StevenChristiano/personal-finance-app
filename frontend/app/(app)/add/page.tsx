@@ -437,7 +437,7 @@ export default function AddTransactionPage() {
                                 </div>
 
                                 {/* Table */}
-                                <div className="overflow-auto max-h-13 w-full min-w-0">
+                                <div className="overflow-auto max-h-130 w-full min-w-0">
                                     <table className="w-full text-sm border-collapse">
                                         <thead className="sticky top-0 bg-[#F9FAFB] border-b border-[#E5E7EB] z-10">
                                             <tr>
