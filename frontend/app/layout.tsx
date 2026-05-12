@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SpendIt",
+  title: "SpendWise",
   description: "Personal finance tracker with AI-powered anomaly detection",
 };
 

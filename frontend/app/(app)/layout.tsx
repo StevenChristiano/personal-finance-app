@@ -51,7 +51,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         <Wallet size={12} color="white" />
                     </div>
                     <span className="font-bold text-[#1A1A1A] text-base" style={{ fontFamily: "Georgia, serif" }}>
-                        SpendIt
+                        SpendWise
                     </span>
                 </div>
             </div>
@@ -75,7 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             <Wallet size={14} color="white" />
                         </div>
                         <span className="font-bold text-[#1A1A1A] text-lg" style={{ fontFamily: "Georgia, serif" }}>
-                            SpendIt
+                            SpendWise
                         </span>
                     </div>
                     <button

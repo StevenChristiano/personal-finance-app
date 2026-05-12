@@ -50,7 +50,7 @@ export default function RegisterPage() {
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-[#1A1A1A] tracking-tight" style={{ fontFamily: "Georgia, serif" }}>
-            SpendIt
+            SpendWise
           </h1>
           <p className="text-[#6B7280] mt-1 text-sm">Spot Big Spends. Stay in Control.</p>
         </div>
