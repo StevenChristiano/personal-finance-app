@@ -28,17 +28,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#nanti hapus
-import os
-
-@app.get("/debug-env")
-def debug_env():
-    db_url = os.getenv("DATABASE_URL", "NOT FOUND")
-    # Sensor password biar aman
-    if db_url != "NOT FOUND":
-        db_url = db_url[:30] + "..."
-    return {"DATABASE_URL": db_url}
-
 @app.get("/")
 def root():
     return {"message": "Personal Finance API", "status": "running"}
