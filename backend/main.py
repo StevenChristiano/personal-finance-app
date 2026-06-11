@@ -2,12 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from database import init_db
+# from database import init_db #di comment karena sudah di-handle di api/index.py, jadi tidak perlu dipanggil lagi di sini
 from routers import auth, settings, transactions, stats, income, balance, export
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # init_db()
+    # init_db() #ini di comment karena sudah di-handle di api/index.py, jadi tidak perlu dipanggil lagi di sini
     yield
 
 app = FastAPI(
