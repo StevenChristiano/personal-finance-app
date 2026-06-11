@@ -6,6 +6,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from main import app
+from mangum import Mangum
 
 # Vercel butuh variabel bernama app atau handler
-handler = app
+handler = Mangum(app, lifespan="off")  # lifespan di-disable karena Vercel tidak mendukung async context manager
