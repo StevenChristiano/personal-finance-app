@@ -7,7 +7,7 @@ from routers import auth, settings, transactions, stats, income, balance, export
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    # init_db()
     yield
 
 app = FastAPI(
