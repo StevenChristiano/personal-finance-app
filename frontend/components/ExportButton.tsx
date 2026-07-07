@@ -17,8 +17,8 @@ export default function ExportButton({ month, year, warningThreshold = 0.5, anom
     const [includeScore,  setIncludeScore]  = useState(false);
     const [exporting,     setExporting]     = useState<"excel" | "pdf" | null>(null);
 
-    const MONTHS_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-                       "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const MONTHS_ID = ["", "January", "February", "March", "April", "May", "June",
+                       "July", "August", "September", "October", "November", "December"];
 
     const handleExport = async (format: "excel" | "pdf") => {
         setExporting(format);
@@ -69,7 +69,7 @@ export default function ExportButton({ month, year, warningThreshold = 0.5, anom
                         {/* Header */}
                         <div className="flex items-center justify-between mb-5">
                             <div>
-                                <h3 className="text-sm font-bold text-[#1A1A1A]">Export Transaksi</h3>
+                                <h3 className="text-sm font-bold text-[#1A1A1A]">Export</h3>
                                 <p className="text-xs text-[#9CA3AF] mt-0.5">{MONTHS_ID[month]} {year}</p>
                             </div>
                             <button
@@ -84,8 +84,8 @@ export default function ExportButton({ month, year, warningThreshold = 0.5, anom
                         <div className="mb-5 p-3 rounded-xl bg-[#F9FAFB] border border-[#EBEBEB]">
                             <label className="flex items-center justify-between cursor-pointer">
                                 <div>
-                                    <p className="text-sm font-medium text-[#374151]">Sertakan Anomaly Score</p>
-                                    <p className="text-xs text-[#9CA3AF]">Tambah kolom score (0–100%) di export</p>
+                                    <p className="text-sm font-medium text-[#374151]">Include Anomaly Score</p>
+                                    <p className="text-xs text-[#9CA3AF]">Add score column (0–100%) to export</p>
                                 </div>
                                 <div
                                     onClick={() => setIncludeScore(v => !v)}
@@ -109,7 +109,7 @@ export default function ExportButton({ month, year, warningThreshold = 0.5, anom
                                 }
                                 <div className="text-left">
                                     <p className="text-sm font-semibold">Excel (.xlsx)</p>
-                                    <p className="text-xs opacity-70">Spreadsheet dengan formatting</p>
+                                    <p className="text-xs opacity-70">Spreadsheet with formatting</p>
                                 </div>
                             </button>
 
@@ -124,7 +124,7 @@ export default function ExportButton({ month, year, warningThreshold = 0.5, anom
                                 }
                                 <div className="text-left">
                                     <p className="text-sm font-semibold">PDF</p>
-                                    <p className="text-xs opacity-70">Laporan siap cetak</p>
+                                    <p className="text-xs opacity-70">Print-ready report</p>
                                 </div>
                             </button>
                         </div>
