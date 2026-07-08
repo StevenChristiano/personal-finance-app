@@ -393,7 +393,7 @@ export default function IncomePage() {
                             </label>
                             {isRecurring && (
                                 <p className="text-xs text-[#6B7280] bg-[#EEF2FF] border border-[#C7D2FE] rounded-xl px-3 py-2 mt-2">
-                                    💡 Income ini akan otomatis muncul tiap bulan. Bisa dinonaktifkan kapanpun lewat toggle di list.
+                                    💡 This income will automatically appear each month. Can be disabled anytime via the toggle in the list.
                                 </p>
                             )}
                         </div>
